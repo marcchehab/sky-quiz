@@ -132,13 +132,19 @@
   #pTime { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
   #player button, #recbar button, #storybox button { font-size: 12px; padding: 2px 8px; background: #1b1e5e;
     color: #e8eaf6; border-color: #3a3f8f; }
-  #pEdit { display: none; max-height: 170px; overflow-y: auto; font-size: 12px; margin-top: 6px;
+  #pEdit { display: none; max-height: 300px; overflow-y: auto; font-size: 12px; margin-top: 6px;
     border-top: 1px solid #3a3f8f; padding-top: 6px; }
   #pEdit .cue { display: flex; gap: 6px; align-items: center; padding: 1px 0; }
   #pEdit .cue.on { color: #4ade80; }
   #pEdit .cue i { flex: 1; }
   #pEdit .sl { display: flex; gap: 6px; }
   #pEdit .sl [contenteditable] { flex: 1; outline: none; border-bottom: 1px dotted #3a3f8f; }
+  #pEdit h4 { margin: 8px 0 2px; font-size: 12px; color: #f2c94c; }
+  #pEdit .gen { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+  #pEdit .gen input { flex: 1; min-width: 0; font-size: 12px; background: #0b0d33; color: #e8eaf6; border: 1px solid #3a3f8f; padding: 2px 4px; }
+  #pEdit .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+  #pEdit .thumbs img { width: 90px; height: 90px; cursor: pointer; border: 2px solid #3a3f8f; }
+  #pEdit .thumbs img:hover { border-color: #f2c94c; }
   #recbar .big { font-size: 42px; text-align: center; color: #f87171; line-height: 1.1; }
   #recbar .dot { color: #f87171; animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: .2; } }
@@ -186,6 +192,7 @@
     <div id="player"></div>
     <div id="recbar"></div>
     <input type="file" id="importFile" accept=".skystory,application/json" hidden>
+    <input type="file" id="sfxFile" accept="audio/*" hidden>
   </div>
   <div class="credit">Drag to rotate · scroll or pinch to zoom · click to add to your list · data: <a href="https://github.com/ofrohn/d3-celestial" target="_blank" rel="noopener">d3-celestial</a> (Yale BSC, IAU boundaries)</div>
 </div>
@@ -541,6 +548,7 @@
       ctx.beginPath(); act.forEach(function (a) { CONS[a].lines.forEach(strokeFlat); });
       ctx.strokeStyle = COL.lineHi; ctx.lineWidth = 2; ctx.stroke();
     }
+    if (player.story && player.story.art) drawArt();
     if (st.target && st.mode === 'name') {
       ctx.beginPath(); st.target.lines.forEach(strokeFlat);
       ctx.strokeStyle = COL.lineHi; ctx.lineWidth = 2; ctx.stroke();
@@ -939,7 +947,7 @@
   // story = { id, title, created, duration, audio: Blob, cues: [{ t, sel: [abbr], view }], subs: [{ t0, t1, text }] }
   // Cues are full snapshots, so the state at time t is simply the last cue with cue.t <= t.
   var DB = null, stories = [], rec = null;
-  var player = { story: null, audio: null, url: null, active: [], cue: -1, raf: 0, edit: false };
+  var player = { story: null, audio: null, url: null, active: [], cue: -1, raf: 0, edit: false, gen: null, place: null };
   function db() {
     return DB || (DB = new Promise(function (res, rej) {
       var r = indexedDB.open('sky-stories', 1);
@@ -1033,7 +1041,8 @@
       if (!r.t0) return;   // cancelled during the countdown
       var old = r.replace;
       var s = { id: old ? old.id : 's' + Date.now(), title: r.title, created: old ? old.created : Date.now(), duration: dur,
-        audio: new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }), cues: r.cues, subs: [] };
+        audio: new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }), cues: r.cues, subs: [],
+        art: old ? old.art || [] : [], sfx: old ? old.sfx || [] : [] };
       dbPut(s).then(loadStories).then(function () { openPlayer(s); });
     };
     if (r.mr.state !== 'inactive') r.mr.stop(); else r.mr.onstop();
@@ -1066,7 +1075,7 @@
   function closePlayer() {
     if (!player.story) return;
     pausePlayer(); URL.revokeObjectURL(player.url);
-    player.story = null; player.audio = null; player.active = [];
+    player.story = null; player.audio = null; player.active = []; player.gen = null; player.place = null;
     $('player').style.display = 'none'; renderSel(); req();
   }
   function ptime() { return player.audio ? player.audio.currentTime : 0; }
@@ -1080,7 +1089,8 @@
     cancelAnimationFrame(player.raf);
     (function f() {
       if (!player.audio) return;
-      applyAt(ptime()); updTime();
+      var t = ptime(); applyAt(t); updTime(); fireSfx(t);
+      if (player.story.art && player.story.art.length) req();
       if (!player.audio.paused) player.raf = requestAnimationFrame(f); else renderCtl();
     })();
   }
@@ -1158,9 +1168,10 @@
         return '<div class="cue" data-i="' + i + '"><span>' + c.t.toFixed(1) + ' s</span><i>' +
           (c.sel.length ? c.sel.map(function (a) { return esc(cname3(a)); }).join(', ') : '—') + '</i>' +
           '<button data-act="nudge" data-d="-0.5">−½ s</button><button data-act="nudge" data-d="0.5">+½ s</button>' +
-          '<button data-act="go">▶</button><button data-act="delcue">×</button></div>';
+          '<button data-act="go">▶</button><button data-act="artfor" title="Generate a picture for these constellations">🎨</button><button data-act="delcue">×</button></div>';
       }).join('') +
-      '<div class="ctl" style="margin:4px 0"><button data-act="addcue">+ cue with current view at playhead</button></div>' +
+      '<div class="ctl" style="margin:4px 0"><button data-act="addcue">+ cue with current view at playhead</button>' +
+      '<button data-act="addsfx">🔊 + sound at playhead</button></div>' + renderArtEdit() + renderSfxEdit() +
       (s.subs && s.subs.length ? s.subs.map(function (x, i) {
         return '<div class="sl"><span>' + fmtT(x.t0) + '</span><span contenteditable="true" data-si="' + i + '">' + esc(x.text) + '</span></div>';
       }).join('') : '<div class="hint">No subtitles yet – use CC in the Stories list.</div>');
@@ -1179,7 +1190,7 @@
     saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit();
   }
   $('player').addEventListener('click', function (e) {
-    var b = e.target.closest('button'); if (!b) return;
+    var b = e.target.closest('button, img[data-act]'); if (!b) return;
     var act = b.dataset.act, row = b.closest('.cue'), s = player.story, i = row ? +row.dataset.i : -1;
     if (act === 'pp') { if (player.audio.paused) playPlayer(); else pausePlayer(); }
     else if (act === 'close') { closePlayer(); releaseMic(); }
@@ -1189,6 +1200,7 @@
     else if (act === 'nudge') { s.cues[i].t = Math.max(0, +(s.cues[i].t + +b.dataset.d).toFixed(2)); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
     else if (act === 'delcue') { s.cues.splice(i, 1); saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit(); }
     else if (act === 'go') { pausePlayer(); player.audio.currentTime = s.cues[i].t; player.cue = -1; applyAt(s.cues[i].t); updTime(); }
+    else if (artAct(act, b, s)) return;
     else if (act === 'addcue') { var c = cueAtPlayhead(); c.view = viewNow(); c.sel = player.active.slice(); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
   });
   $('player').addEventListener('focusout', function (e) {
@@ -1196,6 +1208,304 @@
     if (i == null) return;
     player.story.subs[+i].text = e.target.textContent.trim(); saveStory();
   });
+
+  // --- .skystory files: JSON with voice, pictures and sounds as data URLs ---
+  function toData(b) {
+    return new Promise(function (ok, no) { var f = new FileReader(); f.onload = function () { ok(f.result); }; f.onerror = no; f.readAsDataURL(b); });
+  }
+  function toBlob(u) { return fetch(u).then(function (r) { return r.blob(); }); }
+  function packStory(s) {
+    var art = s.art || [], sfx = s.sfx || [];
+    return Promise.all([toData(s.audio), Promise.all(art.map(function (a) { return toData(a.img); })),
+      Promise.all(sfx.map(function (x) { return toData(x.audio); }))]).then(function (r) {
+      return { format: 'skystory', version: 2, id: s.id, title: s.title, created: s.created, duration: s.duration, cues: s.cues, subs: s.subs,
+        audio: r[0],
+        art: art.map(function (a, i) { return Object.assign({}, a, { img: r[1][i] }); }),
+        sfx: sfx.map(function (x, i) { return Object.assign({}, x, { audio: r[2][i] }); }) };
+    });
+  }
+  function unpackStory(o) {
+    var art = o.art || [], sfx = o.sfx || [];
+    return Promise.all([toBlob(o.audio), Promise.all(art.map(function (a) { return toBlob(a.img); })),
+      Promise.all(sfx.map(function (x) { return toBlob(x.audio); }))]).then(function (r) {
+      return { id: o.id || 's' + Date.now(), title: o.title, created: o.created || Date.now(), duration: o.duration,
+        audio: r[0], cues: o.cues || [], subs: o.subs || [],
+        art: art.map(function (a, i) { return Object.assign({}, a, { img: r[1][i] }); }),
+        sfx: sfx.map(function (x, i) { return Object.assign({}, x, { audio: r[2][i] }); }) };
+    });
+  }
+
+  // --- figure art: a picture per story moment, generated locally (ComfyUI + FLUX), drawn onto its stars ---
+  // A frame is a stereographic view around the constellations; u, v in [-1, 1] span the picture.
+  function vec3(ra, dec) { var r = ra * D, d = dec * D; return [Math.cos(d) * Math.cos(r), Math.cos(d) * Math.sin(r), Math.sin(d)]; }
+  function fproj(f, ra, dec) {
+    var da = (ra - f.ra0) * D, d = dec * D, d0 = f.dec0 * D;
+    var cosc = Math.sin(d0) * Math.sin(d) + Math.cos(d0) * Math.cos(d) * Math.cos(da), k = 2 / (1 + cosc);
+    return [-k * Math.cos(d) * Math.sin(da) / f.ext, -k * (Math.cos(d0) * Math.sin(d) - Math.sin(d0) * Math.cos(d) * Math.cos(da)) / f.ext];
+  }
+  function funproj(f, u, v) {
+    var x = -u * f.ext, y = -v * f.ext, r = Math.hypot(x, y), d0 = f.dec0 * D;
+    if (r < 1e-9) return [f.ra0, f.dec0];
+    var c = 2 * Math.atan(r / 2), sc = Math.sin(c), cc = Math.cos(c);
+    var de = Math.asin(cc * Math.sin(d0) + y * sc * Math.cos(d0) / r);
+    var al = f.ra0 * D + Math.atan2(x * sc, r * Math.cos(d0) * cc - y * Math.sin(d0) * sc);
+    return [norm360(al / D), de / D];
+  }
+  function consPts(list) {
+    var pts = [];
+    list.forEach(function (a) { CONS[a].lines.forEach(function (l) { for (var i = 0; i < l.length; i += 2) pts.push([l[i], l[i + 1]]); }); });
+    return pts;
+  }
+  function frameFor(list) {
+    var pts = consPts(list), v = [0, 0, 0];
+    pts.forEach(function (p) { var q = vec3(p[0], p[1]); v[0] += q[0]; v[1] += q[1]; v[2] += q[2]; });
+    var f = { ra0: +norm360(Math.atan2(v[1], v[0]) / D).toFixed(3), dec0: +(Math.atan2(v[2], Math.hypot(v[0], v[1])) / D).toFixed(3), ext: 1 };
+    var m = 0;
+    pts.forEach(function (p) { var q = fproj(f, p[0], p[1]); m = Math.max(m, Math.abs(q[0]), Math.abs(q[1])); });
+    f.ext = +(m * 1.18).toFixed(5);
+    return f;
+  }
+  var artImgs = new WeakMap();   // img Blob -> HTMLImageElement
+  function artImg(b) {
+    var im = artImgs.get(b);
+    if (!im) { im = new Image(); im.onload = req; im.src = URL.createObjectURL(b); artImgs.set(b, im); }
+    return im;
+  }
+  // map one picture triangle onto the sky triangle (affine), clipped; a mesh of these follows any projection
+  function drawTri(im, s, d) {
+    var x0 = s[0][0], y0 = s[0][1], dx1 = s[1][0] - x0, dy1 = s[1][1] - y0, dx2 = s[2][0] - x0, dy2 = s[2][1] - y0;
+    var det = dx1 * dy2 - dx2 * dy1; if (!det) return;
+    var du1 = d[1][0] - d[0][0], du2 = d[2][0] - d[0][0], dv1 = d[1][1] - d[0][1], dv2 = d[2][1] - d[0][1];
+    var a = (du1 * dy2 - du2 * dy1) / det, c = (du2 * dx1 - du1 * dx2) / det;
+    var b = (dv1 * dy2 - dv2 * dy1) / det, e = (dv2 * dx1 - dv1 * dx2) / det;
+    var mx = (d[0][0] + d[1][0] + d[2][0]) / 3, my = (d[0][1] + d[1][1] + d[2][1]) / 3;
+    ctx.save(); ctx.beginPath();
+    d.forEach(function (p, i) {   // grow the clip by ~1 px so neighbouring triangles leave no seam
+      var vx = p[0] - mx, vy = p[1] - my, n = Math.hypot(vx, vy) || 1, X = p[0] + vx / n, Y = p[1] + vy / n;
+      if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+    });
+    ctx.clip();
+    ctx.setTransform(dpr * a, dpr * b, dpr * c, dpr * e, dpr * (d[0][0] - a * x0 - c * y0), dpr * (d[0][1] - b * x0 - e * y0));
+    var sx = Math.max(0, Math.min(s[0][0], s[1][0], s[2][0]) - 2), sy = Math.max(0, Math.min(s[0][1], s[1][1], s[2][1]) - 2);
+    var sw = Math.min(im.naturalWidth, Math.max(s[0][0], s[1][0], s[2][0]) + 2) - sx, sh = Math.min(im.naturalHeight, Math.max(s[0][1], s[1][1], s[2][1]) + 2) - sy;
+    if (sw > 0 && sh > 0) ctx.drawImage(im, sx, sy, sw, sh, sx, sy, sw, sh);
+    ctx.restore();
+  }
+  var ART_FADE = 0.8, ART_GRID = 8;
+  function placeUV(a, u, v) {
+    var q = a.place || { x: 0, y: 0, s: 1, r: 0 }, c = Math.cos(q.r), s = Math.sin(q.r);
+    return [q.x + q.s * (c * u - s * v), q.y + q.s * (s * u + c * v)];
+  }
+  function drawArt() {
+    var t = ptime();
+    player.story.art.forEach(function (a) {
+      var placing = player.place === a, al = placing ? 1 : Math.min(1, (t - a.t0) / ART_FADE, (a.t1 - t) / ART_FADE);
+      if (al <= 0) return;
+      var im = artImg(a.img); if (!im.naturalWidth) return;
+      var w = im.naturalWidth, h = im.naturalHeight, G = ART_GRID, P = [];
+      for (var j = 0; j <= G; j++) for (var i = 0; i <= G; i++) {
+        var uv = placeUV(a, 2 * i / G - 1, 2 * j / G - 1), sky = funproj(a.frame, uv[0], uv[1]);
+        P.push(proj(sky[0], sky[1], 'fill'));
+      }
+      ctx.save(); ctx.globalAlpha = al; ctx.globalCompositeOperation = 'screen';   // black stays invisible
+      for (j = 0; j < G; j++) for (i = 0; i < G; i++) {
+        var k = j * (G + 1) + i, q = [P[k], P[k + 1], P[k + G + 1], P[k + G + 2]];
+        if (q.some(function (p) { return !p; })) continue;
+        if (Math.max(Math.abs(q[0][0] - q[3][0]), Math.abs(q[1][0] - q[2][0])) > W / 2) continue;   // across the chart's RA seam
+        var x0 = i * w / G, x1 = (i + 1) * w / G, y0 = j * h / G, y1 = (j + 1) * h / G;
+        drawTri(im, [[x0, y0], [x1, y0], [x0, y1]], [q[0], q[1], q[2]]);
+        drawTri(im, [[x1, y0], [x1, y1], [x0, y1]], [q[1], q[3], q[2]]);
+      }
+      ctx.restore();
+      if (placing) {   // outline of the picture while it is being placed
+        var ring = [];
+        for (i = 0; i <= G; i++) ring.push(P[i]);
+        for (j = 1; j <= G; j++) ring.push(P[j * (G + 1) + G]);
+        for (i = G - 1; i >= 0; i--) ring.push(P[G * (G + 1) + i]);
+        for (j = G - 1; j >= 0; j--) ring.push(P[j * (G + 1)]);
+        ctx.beginPath(); ring.forEach(function (p, k) { if (p) ctx[k ? 'lineTo' : 'moveTo'](p[0], p[1]); });
+        ctx.strokeStyle = '#f2c94c'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+      }
+    });
+  }
+
+  function screenUV(a, X, Y) { var s = unproj(X, Y); return s && fproj(a.frame, s[0], s[1]); }
+  function placeOf(a) { return (a.place = a.place || { x: 0, y: 0, s: 1, r: 0 }); }
+  function moveArt(prev, p, rotate) {
+    var a = player.place, q = placeOf(a), u0 = screenUV(a, prev[0], prev[1]), u1 = screenUV(a, p[0], p[1]);
+    if (!u0 || !u1) return;
+    if (rotate) q.r += Math.atan2(u1[1] - q.y, u1[0] - q.x) - Math.atan2(u0[1] - q.y, u0[0] - q.x);
+    else { q.x += u1[0] - u0[0]; q.y += u1[1] - u0[1]; }
+    req();
+  }
+  var placeT = 0;
+  function savePlaceSoon() { clearTimeout(placeT); placeT = setTimeout(saveStory, 300); }
+
+  // ComfyUI runs locally for the author: python main.py --enable-cors-header '*'
+  var COMFY = 'http://127.0.0.1:8188', ART_N = 1024, ART_VARIANTS = 4;
+  var ART_STYLE = 'luminous pale gold fine line drawing on pure black background, elegant antique star atlas illustration, ' +
+    'glowing thin outlines, minimal, no text, no stars, no background details, ';
+  function comfyWorkflow(text, seed) {
+    return {
+      1: { class_type: 'UnetLoaderGGUF', inputs: { unet_name: 'flux1-dev-Q5_K_S.gguf' } },
+      2: { class_type: 'DualCLIPLoaderGGUF', inputs: { clip_name1: 'clip_l.safetensors', clip_name2: 't5-v1_1-xxl-encoder-Q5_K_M.gguf', type: 'flux' } },
+      3: { class_type: 'VAELoader', inputs: { vae_name: 'ae.safetensors' } },
+      4: { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: ART_STYLE + text } },
+      5: { class_type: 'FluxGuidance', inputs: { conditioning: ['4', 0], guidance: 3.5 } },
+      7: { class_type: 'EmptySD3LatentImage', inputs: { width: ART_N, height: ART_N, batch_size: 1 } },
+      8: { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 0], text: '' } },
+      9: { class_type: 'KSampler', inputs: { model: ['1', 0], positive: ['5', 0], negative: ['8', 0], latent_image: ['7', 0],
+        seed: seed, steps: 20, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1 } },
+      10: { class_type: 'VAEDecode', inputs: { samples: ['9', 0], vae: ['3', 0] } },
+      11: { class_type: 'SaveImage', inputs: { images: ['10', 0], filename_prefix: 'skystory' } }
+    };
+  }
+  function comfyJSON(path, opt) {
+    return fetch(COMFY + path, opt).then(function (r) { if (!r.ok) throw new Error('ComfyUI ' + r.status); return r.json(); });
+  }
+  function comfyRun(text, seed) {
+    return comfyJSON('/prompt', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: comfyWorkflow(text, seed) }) }).then(function (r) {
+      return new Promise(function (ok, no) {
+        (function poll() {
+          comfyJSON('/history/' + r.prompt_id).then(function (h) {
+            var x = h[r.prompt_id];
+            if (!x) return setTimeout(poll, 2000);
+            if (x.status && x.status.status_str === 'error') return no(new Error('generation failed (see ComfyUI log)'));
+            var im = x.outputs['11'].images[0];
+            fetch(COMFY + '/view?type=output&filename=' + encodeURIComponent(im.filename) + '&subfolder=' + encodeURIComponent(im.subfolder || ''))
+              .then(function (r) { return r.blob(); }).then(ok, no);
+          }, no);
+        })();
+      });
+    });
+  }
+  // darken the near-black background to true black (so 'screen' leaves the sky untouched) and store as webp
+  function cleanArt(blob) {
+    return createImageBitmap(blob).then(function (bm) {
+      var c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height;
+      var g = c.getContext('2d'); g.drawImage(bm, 0, 0);
+      var d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+      for (var i = 0; i < p.length; i += 4) for (var k = 0; k < 3; k++) p[i + k] = Math.max(0, (p[i + k] - 14) * 1.06);
+      g.putImageData(d, 0, 0);
+      return new Promise(function (ok) { c.toBlob(ok, 'image/webp', 0.88); });
+    });
+  }
+  // the art stays until one of its constellations is switched off (or the story ends)
+  function artEnd(s, i, list) {
+    for (var k = i + 1; k < s.cues.length; k++)
+      if (list.some(function (a) { return s.cues[k].sel.indexOf(a) < 0; })) return s.cues[k].t;
+    return s.duration;
+  }
+  function startArt(s, i) {
+    var c = s.cues[i];
+    if (!c.sel.length) { $('pSub').textContent = 'Switch a constellation on in this cue first.'; return; }
+    player.gen = { i: i, cons: c.sel.slice(), text: player.gen && player.gen.text || '', thumbs: [], busy: 0, msg: '' };
+    renderEdit();
+  }
+  function generateArt(s) {
+    var gen = player.gen, list = gen.cons.filter(function (a) { return CONS[a]; });
+    if (!list.length) { gen.msg = 'Unknown constellations.'; return renderEdit(); }
+    gen.busy = ART_VARIANTS;
+    Promise.resolve().then(function () {
+      gen.msg = 'Generating ' + ART_VARIANTS + ' pictures (about 1–2 min each) …'; renderEdit();
+      var chain = Promise.resolve();
+      for (var n = 0; n < ART_VARIANTS; n++) chain = chain.then(function () {
+        var seed = Math.floor(Math.random() * 2147483647);
+        return comfyRun(gen.text, seed).then(cleanArt).then(function (b) {
+          if (player.gen !== gen) return;
+          gen.thumbs.push({ img: b, seed: seed, url: URL.createObjectURL(b) }); gen.busy--; renderEdit();
+        });
+      });
+      return chain;
+    }).then(function () { if (player.gen === gen) { gen.msg = 'Pick one.'; gen.busy = 0; renderEdit(); } },
+      function (e) {
+        if (player.gen !== gen) return;
+        gen.busy = 0; gen.msg = 'ComfyUI not reachable or failed (' + e.message + '). Start it with --enable-cors-header.'; renderEdit();
+      });
+  }
+  function pickArt(s, k) {
+    var gen = player.gen, th = gen.thumbs[k], c = s.cues[gen.i];
+    s.art = s.art || [];
+    s.art.push({ t0: c.t, t1: artEnd(s, gen.i, gen.cons), cons: gen.cons.slice(), prompt: gen.text, seed: th.seed, img: th.img,
+      frame: frameFor(gen.cons.filter(function (x) { return CONS[x]; })), place: { x: 0, y: 0, s: 1, r: 0 } });
+    s.art.sort(function (a, b) { return a.t0 - b.t0; });
+    gen.thumbs.forEach(function (x) { URL.revokeObjectURL(x.url); });
+    player.gen = null; player.place = s.art.filter(function (a) { return a.img === th.img; })[0];
+    saveStory(); renderEdit(); req();
+  }
+  function renderArtEdit() {
+    var s = player.story, gen = player.gen, h = '';
+    if (gen) {
+      h += '<h4>🎨 Picture for ' + esc(gen.cons.map(cname3).join(', ')) + ' at ' + s.cues[gen.i].t.toFixed(1) + ' s</h4>' +
+        '<div class="gen"><input id="artCons" value="' + esc(gen.cons.join(' ')) + '" style="flex:0 0 90px" title="Constellations (abbreviations)">' +
+        '<input id="artText" placeholder="e.g. a young bear riding a long dragon" value="' + esc(gen.text) + '">' +
+        '<button data-act="artgen"' + (gen.busy ? ' disabled' : '') + '>Generate</button><button data-act="artcancel">×</button></div>' +
+        '<div class="hint">' + esc(gen.msg) + '</div><div class="thumbs">' +
+        gen.thumbs.map(function (x, k) { return '<img src="' + x.url + '" data-act="artpick" data-k="' + k + '" title="Use this one">'; }).join('') + '</div>';
+    }
+    if (s.art && s.art.length) h += '<h4>🎨 Pictures</h4>' + s.art.map(function (a, i) {
+      return '<div class="cue" data-ai="' + i + '"><span>' + a.t0.toFixed(1) + '–' + a.t1.toFixed(1) + ' s</span><i>' +
+        esc(a.cons.map(cname3).join(', ')) + (a.prompt ? ' · ' + esc(a.prompt) : '') + '</i>' +
+        '<button data-act="artnudge" data-k="t0" data-d="-0.5">−½</button><button data-act="artnudge" data-k="t0" data-d="0.5">+½</button> … ' +
+        '<button data-act="artnudge" data-k="t1" data-d="-0.5">−½</button><button data-act="artnudge" data-k="t1" data-d="0.5">+½</button>' +
+        '<button data-act="artplace" title="Move, size and turn it on the sky"' + (player.place === a ? ' style="border-color:#f2c94c"' : '') + '>📌</button>' +
+        '<button data-act="artdel">×</button></div>';
+    }).join('');
+    if (player.place) h += '<div class="hint">📌 Drag = move · wheel = size · Shift + drag/wheel = turn · 📌 again = done</div>';
+    return h;
+  }
+
+  // --- sound effects at a point in time (local audio files, e.g. CC0 from freesound.org) ---
+  var sfxUrls = new WeakMap(), lastT = 0;
+  function sfxUrl(b) { var u = sfxUrls.get(b); if (!u) { u = URL.createObjectURL(b); sfxUrls.set(b, u); } return u; }
+  function playSfx(x) { var a = new Audio(sfxUrl(x.audio)); a.volume = x.vol == null ? 0.8 : x.vol; a.play().catch(function () {}); }
+  function fireSfx(t) {
+    var s = player.story;
+    if (s.sfx && player.audio && !player.audio.paused && t > lastT && t - lastT < 0.5)   // jumps (seeking) don't fire
+      s.sfx.forEach(function (x) { if (x.t > lastT && x.t <= t) playSfx(x); });
+    lastT = t;
+  }
+  function renderSfxEdit() {
+    var s = player.story;
+    if (!s.sfx || !s.sfx.length) return '';
+    return '<h4>🔊 Sounds</h4>' + s.sfx.map(function (x, i) {
+      return '<div class="cue" data-xi="' + i + '"><span>' + x.t.toFixed(1) + ' s</span><i>' + esc(x.name) + '</i>' +
+        '<input type="range" min="0" max="1" step="0.05" value="' + (x.vol == null ? 0.8 : x.vol) + '" data-xv="' + i + '" style="width:70px" title="Volume">' +
+        '<button data-act="sfxnudge" data-d="-0.5">−½ s</button><button data-act="sfxnudge" data-d="0.5">+½ s</button>' +
+        '<button data-act="sfxplay">▶</button><button data-act="sfxdel">×</button></div>';
+    }).join('');
+  }
+  $('sfxFile').addEventListener('change', function () {
+    var f = this.files[0], s = player.story; this.value = ''; if (!f || !s) return;
+    s.sfx = s.sfx || [];
+    s.sfx.push({ t: +ptime().toFixed(2), name: f.name.replace(/\.\w+$/, ''), vol: 0.8, audio: f.slice(0, f.size, f.type) });
+    s.sfx.sort(function (a, b) { return a.t - b.t; });
+    saveStory(); renderEdit();
+  });
+  $('player').addEventListener('input', function (e) {
+    var i = e.target.dataset && e.target.dataset.xv;
+    if (i != null) { player.story.sfx[+i].vol = +e.target.value; saveStory(); }
+    if (e.target.id === 'artText' && player.gen) player.gen.text = e.target.value;
+    if (e.target.id === 'artCons' && player.gen) player.gen.cons = e.target.value.trim().split(/[\s,]+/).filter(Boolean);
+  });
+  // editor buttons for pictures and sounds; returns true if handled
+  function artAct(act, b, s) {
+    var ai = b.closest('[data-ai]'), xi = b.closest('[data-xi]'), row = b.closest('.cue');
+    if (act === 'artfor') startArt(s, +row.dataset.i);
+    else if (act === 'artgen') generateArt(s);
+    else if (act === 'artpick') pickArt(s, +b.dataset.k);
+    else if (act === 'artcancel') { player.gen = null; renderEdit(); }
+    else if (act === 'artnudge') { var a = s.art[+ai.dataset.ai], k = b.dataset.k; a[k] = Math.max(0, +(a[k] + +b.dataset.d).toFixed(2)); saveStory(); renderEdit(); req(); }
+    else if (act === 'artdel') { if (player.place === s.art[+ai.dataset.ai]) player.place = null; s.art.splice(+ai.dataset.ai, 1); saveStory(); renderEdit(); req(); }
+    else if (act === 'artplace') { var pa = s.art[+ai.dataset.ai]; player.place = player.place === pa ? null : pa; renderEdit(); req(); }
+    else if (act === 'addsfx') $('sfxFile').click();
+    else if (act === 'sfxnudge') { var x = s.sfx[+xi.dataset.xi]; x.t = Math.max(0, +(x.t + +b.dataset.d).toFixed(2)); saveStory(); renderEdit(); }
+    else if (act === 'sfxplay') playSfx(s.sfx[+xi.dataset.xi]);
+    else if (act === 'sfxdel') { s.sfx.splice(+xi.dataset.xi, 1); saveStory(); renderEdit(); }
+    else return false;
+    return true;
+  }
 
   // --- stories list, export/import, Whisper subtitles ---
   function storyMsg(m) { var e = $('stMsg'); if (e) e.textContent = m; else if (m) alert(m); }
@@ -1238,11 +1548,8 @@
   function openAny(s) {   // published stories are fetched on demand
     if (!s.pub) return openPlayer(s);
     storyMsg('Loading “' + s.title + '” …');
-    fetch('../stories/' + s.pub.file).then(function (r) { return r.json(); }).then(function (o) {
-      return fetch(o.audio).then(function (r) { return r.blob(); }).then(function (blob) {
-        storyMsg('');
-        openPlayer({ id: o.id, title: o.title, created: o.created, duration: o.duration, audio: blob, cues: o.cues || [], subs: o.subs || [], published: true });
-      });
+    fetch('../stories/' + s.pub.file).then(function (r) { return r.json(); }).then(unpackStory).then(function (x) {
+      storyMsg(''); x.published = true; openPlayer(x);
     }).catch(function (e) { storyMsg('Could not load the story: ' + e.message); });
   }
   $('storybox').addEventListener('click', function (e) {
@@ -1257,26 +1564,20 @@
     else if (act === 'subs') transcribe(s);
   });
   function exportStory(s) {
-    var fr = new FileReader();
-    fr.onload = function () {
-      var o = { format: 'skystory', version: 1, id: s.id, title: s.title, created: s.created, duration: s.duration, cues: s.cues, subs: s.subs, audio: fr.result };
+    packStory(s).then(function (o) {
       var a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: 'application/json' }));
       a.download = s.title.replace(/[^\w\-]+/g, '_') + '.skystory';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-    };
-    fr.readAsDataURL(s.audio);
+    });
   }
   $('importFile').addEventListener('change', function () {
     var f = this.files[0]; this.value = ''; if (!f) return;
     f.text().then(function (txt) {
       var o = JSON.parse(txt);
       if (o.format !== 'skystory') throw new Error('not a .skystory file');
-      return fetch(o.audio).then(function (r) { return r.blob(); }).then(function (blob) {
-        return dbPut({ id: o.id || 's' + Date.now(), title: o.title, created: o.created || Date.now(), duration: o.duration,
-          audio: blob, cues: o.cues || [], subs: o.subs || [] });
-      });
+      return unpackStory(o).then(dbPut);
     }).then(loadStories).then(function () { storyMsg('Imported.'); }, function (e) { storyMsg('Import failed: ' + e.message); });
   });
 
@@ -1379,6 +1680,7 @@
     }
     if (!moved && Math.hypot(p[0] - down[0], p[1] - down[1]) < 5) return;
     if (!moved) { moved = true; cv.classList.add('drag'); }
+    if (player.place) { moveArt(prev, p, e.shiftKey); return; }
     cancelAnimationFrame(anim);
     var dx = p[0] - prev[0], dy = p[1] - prev[1], k = 1 / (st.S * D);
     var c = st.proj === 'map' ? 1 : 1 / Math.max(Math.cos(st.dec0 * D), 0.25);
@@ -1389,6 +1691,7 @@
   function up(e) {
     var p = ptrs[e.pointerId]; delete ptrs[e.pointerId];
     cv.classList.remove('drag');
+    if (player.place) { if (moved) savePlaceSoon(); return; }
     if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'draw' && st.target && !st.answered) {
       drawClick(starAt(p[0], p[1]));
     } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
@@ -1407,6 +1710,11 @@
   cv.addEventListener('pointerleave', function () { $('tip').style.display = 'none'; });
   cv.addEventListener('wheel', function (e) {
     e.preventDefault(); cancelAnimationFrame(anim);
+    if (player.place) {
+      var q = placeOf(player.place);
+      if (e.shiftKey) q.r += (e.deltaY || e.deltaX) * 0.002; else q.s *= Math.exp(-e.deltaY * 0.0015);
+      savePlaceSoon(); req(); return;
+    }
     st.S *= Math.exp(-e.deltaY * 0.0015); clampS(); req();
     if (player.story) pausePlayer();
     if (rec) { clearTimeout(wheelT); wheelT = setTimeout(snap, 250); }
@@ -1466,7 +1774,7 @@
     try { restore(JSON.parse(localStorage.getItem('sky-quiz'))); } catch (e) {}
     var q = {}; location.search.replace(/[?&]([^=&]+)=([^&]*)/g, function (_, k, v) { q[k] = decodeURIComponent(v); });
     start(q);
-    if (q.debug) window.__sky = { st: st, CONS: CONS, proj: proj, segsOf: segsOf, SKY: SKY };   // test hook
+    if (q.debug) window.__sky = { st: st, CONS: CONS, proj: proj, segsOf: segsOf, SKY: SKY, player: player, open: openPlayer2, renderEdit: renderEdit };   // test hook
   }
 })();
 </script>
