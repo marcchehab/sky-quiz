@@ -79,6 +79,17 @@
   #layers { position: absolute; right: 8px; top: 8px; display: none; background: var(--bg);
     border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; z-index: 5; font-size: 13px; }
   #layers label { display: block; cursor: pointer; white-space: nowrap; }
+  #sel { position: absolute; left: 8px; top: 8px; max-height: calc(100% - 40px); overflow-y: auto;
+    background: rgba(8,9,40,.85); border: 1px solid #8c7a2e; border-radius: 8px; padding: 6px 4px 6px 10px;
+    color: #e8eaf6; font-size: 13px; display: none; min-width: 150px; }
+  #sel .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: #f2c94c; }
+  #sel .hd span { flex: 1; }
+  #sel ol { margin: 0; padding-left: 22px; }
+  #sel li { cursor: pointer; font-style: italic; padding: 1px 0; }
+  #sel li:hover { color: #f2c94c; }
+  #sel li b { font-style: normal; opacity: .5; margin-left: 6px; padding: 0 3px; }
+  #sel li b:hover { opacity: 1; color: #f87171; }
+  #sel button { font-size: 11px; padding: 1px 6px; background: #1b1e5e; color: #e8eaf6; border-color: #3a3f8f; }
   .credit { font-size: 11px; color: var(--muted); }
   .credit a { color: inherit; }
 </style>
@@ -89,7 +100,7 @@
       <button data-v="explore">Explore</button><button data-v="name">Name it</button><button data-v="find">Find it</button>
     </div>
     <select id="level" title="Which constellations are quizzed">
-      <option value="1">Famous 22</option><option value="2">Common 46</option><option value="3">All 88</option>
+      <option value="0">My list</option><option value="1">Famous 22</option><option value="2">Common 46</option><option value="3">All 88</option>
     </select>
     <div class="seg" id="projs">
       <button data-v="map" title="Rectangular RA/Dec chart">Chart</button><button data-v="sphere" title="Stereographic view, drag to rotate">Sphere</button>
@@ -106,8 +117,9 @@
     <div class="ov" id="score"></div>
     <div id="quiz"></div>
     <div id="layers"></div>
+    <div id="sel"></div>
   </div>
-  <div class="credit">Drag to rotate · scroll or pinch to zoom · data: <a href="https://github.com/ofrohn/d3-celestial" target="_blank" rel="noopener">d3-celestial</a> (Yale BSC, IAU boundaries)</div>
+  <div class="credit">Drag to rotate · scroll or pinch to zoom · click to add to your list · data: <a href="https://github.com/ofrohn/d3-celestial" target="_blank" rel="noopener">d3-celestial</a> (Yale BSC, IAU boundaries)</div>
 </div>
 
 <script>
@@ -128,7 +140,7 @@
     mode: 'explore', level: 1, proj: 'map', ra0: 0, dec0: 0, S: 0,
     layers: { lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
     target: null, picked: null, answered: false, hinted: false, opts: null,
-    score: 0, streak: 0
+    score: 0, streak: 0, sel: []   // sel: constellation abbrs in the order they were picked
   };
   var stats = { best: { name: 0, find: 0 }, c: {} };   // c[abbr] = [right, wrong, run]
   var W = 0, H = 0, dpr = 1, cx = 0, cy = 0;
@@ -385,6 +397,8 @@
       ABBR.forEach(function (a) { CONS[a].polys.forEach(function (p) { strokeFlat(p.concat(p.slice(0, 2))); }); });
       ctx.strokeStyle = COL.bound; ctx.lineWidth = 0.9; ctx.stroke();
     }
+    // own list: light tint so stars and lines stay readable
+    if (st.mode === 'explore') st.sel.forEach(function (a) { fillCons(CONS[a], 'rgba(242,201,76,.13)'); });
     // quiz highlights
     if (st.target && st.mode === 'name') fillCons(st.target, COL.target, COL.targetEdge);
     if (st.target && st.mode === 'find' && st.answered) {
@@ -509,7 +523,10 @@
   }
 
   // ---------- quiz ----------
-  function pool() { return ABBR.filter(function (a) { return CONS[a].rank <= st.level; }); }
+  function pool() {
+    if (st.level === 0 && st.sel.length) return st.sel.slice();
+    return ABBR.filter(function (a) { return CONS[a].rank <= Math.max(1, st.level); });
+  }
   function cstat(a) { return stats.c[a] || (stats.c[a] = [0, 0, 0]); }
   function pickTarget() {
     var p = pool(), w = p.map(function (a) {
@@ -523,7 +540,7 @@
   function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function makeOptions(t) {
     var p = pool(), nb = shuffle(t.nb.slice()).slice(0, 2), o = [t.abbr].concat(nb);
-    shuffle(p.slice()).forEach(function (a) { if (o.length < 4 && o.indexOf(a) < 0) o.push(a); });
+    shuffle(p.slice()).concat(shuffle(ABBR.slice())).forEach(function (a) { if (o.length < 4 && o.indexOf(a) < 0) o.push(a); });
     return shuffle(o).map(function (a) { return CONS[a]; });
   }
   function fmtRA(ra) { var m = Math.round(ra / 15 * 60); return Math.floor(m / 60) % 24 + 'h ' + ('0' + m % 60).slice(-2) + 'm'; }
@@ -610,15 +627,36 @@
   function save() {
     clearTimeout(saveT);
     saveT = setTimeout(function () {
-      var payload = { stats: stats, level: st.level, updatedAt: Date.now() };
+      var payload = { stats: stats, level: st.level, sel: st.sel, updatedAt: Date.now() };
       if (plugin) plugin.setData(payload);
       else try { localStorage.setItem('sky-quiz', JSON.stringify(payload)); } catch (e) {}
     }, 700);
   }
   function restore(d) {
     if (d && d.stats && d.stats.c) { stats = d.stats; stats.best = stats.best || { name: 0, find: 0 }; }
-    if (d && d.level) st.level = d.level;
+    if (d && d.level != null) st.level = d.level;
+    if (d && d.sel) st.sel = d.sel.filter(function (a) { return CONS[a]; });
   }
+
+  function toggleSel(a) {
+    var i = st.sel.indexOf(a);
+    if (i >= 0) st.sel.splice(i, 1); else st.sel.push(a);
+    save(); renderSel(); req();
+  }
+  function renderSel() {
+    var el = $('sel'), n = st.sel.length;
+    $('level').options[0].textContent = 'My list (' + n + ')';
+    if (st.mode !== 'explore' || !n) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.innerHTML = '<div class="hd"><span>My list (' + n + ')</span><button data-act="clear">Clear</button></div><ol>' +
+      st.sel.map(function (a) { return '<li data-a="' + a + '">' + esc(CONS[a].name) + '<b data-x="' + a + '" title="Remove">×</b></li>'; }).join('') + '</ol>';
+  }
+  $('sel').addEventListener('click', function (e) {
+    var t = e.target;
+    if (t.dataset.x) toggleSel(t.dataset.x);
+    else if (t.dataset.act === 'clear') { st.sel = []; save(); renderSel(); req(); }
+    else if (t.dataset.a) flyTo(CONS[t.dataset.a].lra, CONS[t.dataset.a].ldec);
+  });
 
   // ---------- UI wiring ----------
   function setSeg(id, v) { [].forEach.call($(id).children, function (b) { b.classList.toggle('on', b.dataset.v === v); }); }
@@ -627,7 +665,7 @@
     $('sq').dataset.mode = m; setSeg('modes', m);
     $('tip').style.display = 'none';
     if (m !== 'explore') nextQ(); else { renderQuiz(); req(); }
-    renderScore();
+    renderScore(); renderSel();
   }
   function setProj(p) { st.proj = p; setSeg('projs', p); if (p === 'map') st.dec0 = Math.max(-60, Math.min(60, st.dec0)); if (W) clampS(); req(); }
   $('modes').addEventListener('click', function (e) { if (e.target.dataset.v) setMode(e.target.dataset.v); });
@@ -686,6 +724,9 @@
     if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
       var s = unproj(p[0], p[1]), c = s && hit(s[0], s[1]);
       if (c) answer(c);
+    } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore') {
+      var s2 = unproj(p[0], p[1]), c2 = s2 && hit(s2[0], s2[1]);
+      if (c2) toggleSel(c2.abbr);
     }
   }
   cv.addEventListener('pointerup', up);
@@ -721,7 +762,8 @@
   function start(cfg) {
     cfg = cfg || {};
     if (+cfg.height) $('sq').style.setProperty('--h', +cfg.height + 'px');
-    if (cfg.level) st.level = Math.max(1, Math.min(3, +cfg.level || 1));
+    if (cfg.level != null && cfg.level !== '') st.level = Math.max(0, Math.min(3, +cfg.level || 0));
+    if (st.level === 0 && !st.sel.length) st.level = 1;
     $('level').value = String(st.level);
     setProj(cfg.projection === 'sphere' ? 'sphere' : 'map');
     new ResizeObserver(resize).observe($('stage'));
@@ -734,7 +776,7 @@
     plugin = eduskript.init();
     plugin.onReady(function (ctx) { applyTheme(ctx.theme); restore(ctx.data); start(ctx.config); });
     plugin.onThemeChange(applyTheme);
-    plugin.onDataChanged(function (d) { restore(d); renderScore(); });
+    plugin.onDataChanged(function (d) { restore(d); renderScore(); renderSel(); req(); });
     if (plugin.onFullscreenChange) plugin.onFullscreenChange(setFs);
   } else {
     try { restore(JSON.parse(localStorage.getItem('sky-quiz'))); } catch (e) {}
