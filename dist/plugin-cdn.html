@@ -6,7 +6,7 @@
   Runs as an Eduskript plugin (feature-detects window.eduskript) or as a standalone page.
 
   Config attributes on <plugin>:
-    mode       = explore | name | find      (default explore)
+    mode       = explore | name | find | draw   (default explore)
     level      = 1 | 2 | 3                  (1 = 22 famous, 2 = 46, 3 = all 88; default 1)
     projection = map | sphere               (default map)
     height     = px                         (inline height, default 560)
@@ -51,6 +51,7 @@
   canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   canvas.drag { cursor: grabbing; }
   #sq[data-mode="find"] canvas { cursor: crosshair; }
+  #quiz .score-big { font-size: 22px; font-weight: bold; color: #f2c94c; }
   .ov { position: absolute; color: #e8eaf6; font-size: 12px; pointer-events: none;
     text-shadow: 0 1px 2px #000; }
   #coord { left: 8px; bottom: 6px; font-variant-numeric: tabular-nums; }
@@ -145,7 +146,7 @@
 <div id="sq" data-mode="explore">
   <div class="bar">
     <div class="seg" id="modes">
-      <button data-v="explore">Explore</button><button data-v="name">Name it</button><button data-v="find">Find it</button>
+      <button data-v="explore">Explore</button><button data-v="name">Name it</button><button data-v="find">Find it</button><button data-v="draw">Draw it</button>
     </div>
     <select id="level" title="Which constellations are quizzed">
       <option value="0">My list</option><option value="1">Famous 22</option><option value="2">Common 46</option><option value="3">All 88</option>
@@ -198,9 +199,10 @@
     mode: 'explore', level: 1, proj: 'map', ra0: 0, dec0: 0, S: 0,
     layers: { real: true, lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
     target: null, picked: null, answered: false, hinted: false, opts: null,
+    drawn: [], drawFrom: -1, result: null,   // draw mode: user segments [starA, starB], chain start, check result
     score: 0, streak: 0, lang: { en: true, de: false }, sel: []   // sel: constellation abbrs in the order they were picked
   };
-  var stats = { best: { name: 0, find: 0 }, c: {} };   // c[abbr] = [right, wrong, run]
+  var stats = { best: { name: 0, find: 0, draw: 0 }, c: {} };   // c[abbr] = [right, wrong, run]
   var W = 0, H = 0, dpr = 1, cx = 0, cy = 0;
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var $ = function (id) { return document.getElementById(id); };
@@ -511,12 +513,12 @@
     // own list: light tint so stars and lines stay readable
     else if (st.mode === 'explore') st.sel.forEach(function (a) { fillCons(CONS[a], 'rgba(242,201,76,.13)'); });
     // quiz highlights
-    if (st.target && st.mode === 'name') fillCons(st.target, COL.target, COL.targetEdge);
+    if (st.target && (st.mode === 'name' || st.mode === 'draw')) fillCons(st.target, COL.target, COL.targetEdge);
     if (st.target && st.mode === 'find' && st.answered) {
       if (st.picked && st.picked !== st.target) fillCons(st.picked, COL.badFill, '#f87171');
       fillCons(st.target, st.picked === st.target ? COL.okFill : COL.target, st.picked === st.target ? '#4ade80' : COL.targetEdge);
     }
-    if (L.lines) {
+    if (L.lines && st.mode !== 'draw') {
       ctx.beginPath();
       ABBR.forEach(function (a) {
         if (!(st.target === CONS[a] && st.mode === 'name') && !(act && act.indexOf(a) >= 0)) CONS[a].lines.forEach(strokeFlat);
@@ -531,6 +533,7 @@
       ctx.beginPath(); st.target.lines.forEach(strokeFlat);
       ctx.strokeStyle = COL.lineHi; ctx.lineWidth = 2; ctx.stroke();
     }
+    if (st.mode === 'draw' && st.target) drawDrawing();
     if (L.gal) { ctx.beginPath(); strokeFlat(GAL); ctx.strokeStyle = COL.gal; ctx.lineWidth = 1.3; ctx.stroke(); }
     if (L.ecl) {
       ctx.beginPath(); strokeFlat(ECL); ctx.strokeStyle = COL.ecl; ctx.lineWidth = 1.6; ctx.stroke();
@@ -668,6 +671,80 @@
     return Math.min(W, H) / 2 / Math.max(r * 1.5, 15 * D);
   }
 
+  // ---------- draw mode ----------
+  // official figure as star-index pairs; line vertices are catalogue stars, matched within 0.05°
+  // (segments whose star is fainter than mag 6 can't be drawn and are left out of the score)
+  var SEGS = {};
+  function segsOf(c) {
+    if (SEGS[c.abbr]) return SEGS[c.abbr];
+    var s = SKY.s, out = {}, near = function (ra, dec) {
+      for (var i = 0, n = 0; i < s.length; i += 4, n++)
+        if (Math.abs(s[i + 1] - dec) < 0.05 && Math.abs(wrap180(s[i] - ra)) * Math.cos(dec * D) < 0.05) return n;
+      return -1;
+    };
+    (SKY.l[c.abbr] || []).forEach(function (l) {
+      var prev = -1;
+      for (var k = 0; k < l.length; k += 2) {
+        var n = near(l[k], l[k + 1]);
+        if (prev >= 0 && n >= 0 && n !== prev) out[Math.min(prev, n) + '-' + Math.max(prev, n)] = [prev, n];
+        prev = n;
+      }
+    });
+    return (SEGS[c.abbr] = out);
+  }
+  function segKey(a, b) { return Math.min(a, b) + '-' + Math.max(a, b); }
+  function drawClick(n) {
+    if (n < 0) { st.drawFrom = -1; req(); return; }          // empty space: start a new chain
+    if (st.drawFrom === n) { st.drawFrom = -1; req(); return; } // same star again: lift the pen
+    if (st.drawFrom >= 0) {
+      var k = segKey(st.drawFrom, n);
+      if (!st.drawn.some(function (d) { return segKey(d[0], d[1]) === k; })) st.drawn.push([st.drawFrom, n]);
+    }
+    st.drawFrom = n; renderQuiz(); req();
+  }
+  function drawUndo() {
+    var d = st.drawn.pop();
+    st.drawFrom = d ? d[0] : -1; renderQuiz(); req();
+  }
+  function checkDraw() {
+    if (st.answered || !st.drawn.length) return;
+    var off = segsOf(st.target), keys = Object.keys(off), mine = {}, ok = 0, wrong = 0;
+    st.drawn.forEach(function (d) { var k = segKey(d[0], d[1]); mine[k] = 1; if (off[k]) ok++; else wrong++; });
+    var pct = ok / Math.max(1, keys.length + wrong);
+    st.result = { ok: ok, wrong: wrong, missed: keys.filter(function (k) { return !mine[k]; }).length, total: keys.length, pct: pct, mine: mine };
+    st.answered = true; st.drawFrom = -1;
+    var s = cstat(st.target.abbr), good = pct >= 0.8;
+    if (good) { st.streak++; s[0]++; s[2]++; if (st.streak > (stats.best.draw || 0)) stats.best.draw = st.streak; }
+    else { st.streak = 0; s[1]++; s[2] = 0; }
+    st.score += Math.round(20 * pct) * Math.min(4, 1 + Math.floor(Math.max(0, st.streak - 1) / 5));
+    save(); renderQuiz(); renderScore(); req();
+  }
+  function drawDrawing() {
+    var s = SKY.s;
+    function seg(a, b) {
+      var p = proj(s[4 * a], s[4 * a + 1]), q = proj(s[4 * b], s[4 * b + 1]);
+      if (p && q) { ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); }
+    }
+    if (st.answered && st.result) {
+      var off = segsOf(st.target), mine = st.result.mine;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.setLineDash([6, 5]);
+      Object.keys(off).forEach(function (k) { if (!mine[k]) seg(off[k][0], off[k][1]); });
+      ctx.strokeStyle = '#f2c94c'; ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); st.drawn.forEach(function (d) { if (off[segKey(d[0], d[1])]) seg(d[0], d[1]); });
+      ctx.strokeStyle = '#4ade80'; ctx.stroke();
+      ctx.beginPath(); st.drawn.forEach(function (d) { if (!off[segKey(d[0], d[1])]) seg(d[0], d[1]); });
+      ctx.strokeStyle = '#f87171'; ctx.stroke();
+      return;
+    }
+    ctx.beginPath(); st.drawn.forEach(function (d) { seg(d[0], d[1]); });
+    ctx.strokeStyle = '#8fd3ff'; ctx.lineWidth = 2.2; ctx.stroke();
+    if (st.drawFrom >= 0) {
+      var p = proj(s[4 * st.drawFrom], s[4 * st.drawFrom + 1]);
+      if (p) { ctx.beginPath(); ctx.arc(p[0], p[1], 8, 0, 7); ctx.strokeStyle = '#8fd3ff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    }
+  }
+
   // ---------- quiz ----------
   function pool() {
     if (st.level === 0 && st.sel.length) return st.sel.slice();
@@ -694,8 +771,9 @@
 
   function nextQ() {
     st.target = pickTarget(); st.picked = null; st.answered = false; st.hinted = false;
-    if (st.mode === 'name') {
-      st.opts = makeOptions(st.target);
+    st.drawn = []; st.drawFrom = -1; st.result = null;
+    if (st.mode === 'name' || st.mode === 'draw') {
+      if (st.mode === 'name') st.opts = makeOptions(st.target);
       flyTo(st.target.lra, st.target.ldec, fitScale(st.target));
     }
     renderQuiz(); req();
@@ -731,18 +809,28 @@
         html += '<button data-a="' + o.abbr + '" class="' + cls + '"><kbd>' + (i + 1) + '</kbd>' + esc(cname(o)) + '</button>';
       });
       html += '</div>';
+    } else if (st.mode === 'draw') {
+      var r = st.result;
+      html += '<div class="q">Draw <b>' + esc(cname(t)) + '</b> – click star to star</div>';
+      if (r) html += '<div class="fb"><span class="score-big">' + Math.round(100 * r.pct) + ' %</span> &nbsp;' +
+        '<span class="y">' + r.ok + '/' + r.total + ' lines</span>' + (r.wrong ? ' · <span class="n">' + r.wrong + ' extra</span>' : '') +
+        (r.missed ? ' · <span style="color:#f2c94c">' + r.missed + ' missing (dashed)</span>' : '') + '</div>';
+      else html += '<div class="fb">' + st.drawn.length + ' line' + (st.drawn.length === 1 ? '' : 's') +
+        ' · click empty sky to start a new chain · ⌫ undo</div>';
     } else {
       html += '<div class="q">Click on <b>' + esc(cname(t)) + '</b></div>';
       if (st.hinted && !st.answered) html += '<div class="fb">Hint: around RA ' + fmtRA(t.lra) + ', Dec ' + fmtDec(t.ldec) + '</div>';
     }
     html += '<div class="fb">';
-    if (st.answered) {
+    if (st.answered && st.mode !== 'draw') {
       var info = '<i>' + esc(cname(t)) + '</i> (' + t.abbr + ', gen. <i>' + esc(t.gen) + '</i>) — RA ' + fmtRA(t.lra) + ', Dec ' + fmtDec(t.ldec);
       if (st.picked === t) html += '<span class="y">✓ Correct!</span> ' + info;
       else if (st.picked) html += '<span class="n">✗ That was <i>' + esc(cname(st.picked)) + '</i>.</span> ' + info;
       else html += info;
     }
     html += '</div><div class="row">';
+    if (!st.answered && st.mode === 'draw') html += '<button data-act="undo">⌫ Undo</button><button data-act="clearDraw">Clear</button>' +
+      '<button data-act="check"' + (st.drawn.length ? '' : ' disabled') + '>✓ Check ⏎</button>';
     if (!st.answered && st.mode === 'find') html += '<button data-act="hint">Hint (½ points)</button><button data-act="giveup">Show me</button>';
     if (st.answered) html += '<button data-act="next">Next ⏎</button>';
     q.innerHTML = html + '</div>';
@@ -760,11 +848,16 @@
     if (b.dataset.a) answer(CONS[b.dataset.a]);
     else if (b.dataset.act === 'next') nextQ();
     else if (b.dataset.act === 'hint') { st.hinted = true; renderQuiz(); }
+    else if (b.dataset.act === 'undo') drawUndo();
+    else if (b.dataset.act === 'clearDraw') { st.drawn = []; st.drawFrom = -1; renderQuiz(); req(); }
+    else if (b.dataset.act === 'check') checkDraw();
     else if (b.dataset.act === 'giveup') { st.picked = null; st.answered = true; st.streak = 0; cstat(st.target.abbr)[1]++; cstat(st.target.abbr)[2] = 0; save(); flyTo(st.target.lra, st.target.ldec); renderQuiz(); renderScore(); }
   });
   document.addEventListener('keydown', function (e) {
     if (e.target.tagName === 'SELECT') return;
     if (st.mode === 'name' && !st.answered && st.opts && e.key >= '1' && e.key <= '4') answer(st.opts[+e.key - 1]);
+    else if (st.mode === 'draw' && !st.answered && e.key === 'Enter') { e.preventDefault(); checkDraw(); }
+    else if (st.mode === 'draw' && !st.answered && (e.key === 'Backspace' || (e.key === 'z' && (e.ctrlKey || e.metaKey)))) { e.preventDefault(); drawUndo(); }
     else if (st.answered && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); nextQ(); }
   });
 
@@ -1220,7 +1313,9 @@
   function up(e) {
     var p = ptrs[e.pointerId]; delete ptrs[e.pointerId];
     cv.classList.remove('drag');
-    if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
+    if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'draw' && st.target && !st.answered) {
+      drawClick(starAt(p[0], p[1]));
+    } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
       var s = unproj(p[0], p[1]), c = s && hit(s[0], s[1]);
       if (c) answer(c);
     } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore' && !rec && !player.edit && starAt(p[0], p[1]) >= 0) {
@@ -1245,7 +1340,7 @@
   function hover(p) {
     var s = unproj(p[0], p[1]), tip = $('tip');
     $('coord').textContent = s ? 'RA ' + fmtRA(s[0]) + '   Dec ' + fmtDec(s[1]) : '';
-    cv.style.cursor = st.mode === 'explore' && starAt(p[0], p[1]) >= 0 ? 'pointer' : '';
+    cv.style.cursor = (st.mode === 'explore' || st.mode === 'draw') && starAt(p[0], p[1]) >= 0 ? 'pointer' : '';
     if (st.mode !== 'explore' || !s) { tip.style.display = 'none'; return; }
     var c = hit(s[0], s[1]);
     if (!c) { tip.style.display = 'none'; return; }
@@ -1277,7 +1372,7 @@
     setProj(cfg.projection === 'sphere' ? 'sphere' : 'map');
     new ResizeObserver(resize).observe($('stage'));
     resize();
-    setMode(['name', 'find'].indexOf(cfg.mode) >= 0 ? cfg.mode : 'explore');
+    setMode(['name', 'find', 'draw'].indexOf(cfg.mode) >= 0 ? cfg.mode : 'explore');
   }
   function applyTheme(t) { document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light'); }
 
@@ -1291,6 +1386,7 @@
     try { restore(JSON.parse(localStorage.getItem('sky-quiz'))); } catch (e) {}
     var q = {}; location.search.replace(/[?&]([^=&]+)=([^&]*)/g, function (_, k, v) { q[k] = decodeURIComponent(v); });
     start(q);
+    if (q.debug) window.__sky = { st: st, CONS: CONS, proj: proj, segsOf: segsOf, SKY: SKY };   // test hook
   }
 })();
 </script>
