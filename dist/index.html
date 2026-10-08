@@ -201,7 +201,7 @@
     mode: 'explore', level: 1, proj: 'map', ra0: 0, dec0: 0, S: 0,
     layers: { real: true, lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
     target: null, picked: null, answered: false, hinted: false, opts: null,
-    drawn: [], drawFrom: -1, result: null,   // draw mode: user segments [starA, starB], chain start, check result
+    drawn: [], drawFrom: -1, result: null, drawSet: null,   // drawSet: { title, list, i, res } after a story   // draw mode: user segments [starA, starB], chain start, check result
     score: 0, streak: 0, lang: { en: true, de: false }, sel: []   // sel: constellation abbrs in the order they were picked
   };
   var stats = { best: { name: 0, find: 0, draw: 0 }, c: {} };   // c[abbr] = [right, wrong, run]
@@ -719,6 +719,7 @@
     if (good) { st.streak++; s[0]++; s[2]++; if (st.streak > (stats.best.draw || 0)) stats.best.draw = st.streak; }
     else { st.streak = 0; s[1]++; s[2] = 0; }
     st.score += Math.round(20 * pct) * Math.min(4, 1 + Math.floor(Math.max(0, st.streak - 1) / 5));
+    if (st.drawSet) { st.drawSet.res.push(pct); st.drawSet.i++; }
     save(); renderQuiz(); renderScore(); req();
   }
   function drawDrawing() {
@@ -772,7 +773,9 @@
   function fmtDec(d) { var m = Math.round(Math.abs(d) * 60); return (d < 0 ? '−' : '+') + Math.floor(m / 60) + '° ' + ('0' + m % 60).slice(-2) + '′'; }
 
   function nextQ() {
-    st.target = pickTarget(); st.picked = null; st.answered = false; st.hinted = false;
+    var ds = st.mode === 'draw' && st.drawSet;
+    if (ds && ds.i >= ds.list.length) { ds.done = true; st.target = null; renderQuiz(); req(); return; }
+    st.target = ds ? CONS[ds.list[ds.i]] : pickTarget(); st.picked = null; st.answered = false; st.hinted = false;
     st.drawn = []; st.drawFrom = -1; st.result = null;
     if (st.mode === 'name' || st.mode === 'draw') {
       if (st.mode === 'name') st.opts = makeOptions(st.target);
@@ -800,7 +803,19 @@
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (ch) { return '&#' + ch.charCodeAt(0) + ';'; }); }
   function renderQuiz() {
-    var q = $('quiz');
+    var q = $('quiz'), ds = st.drawSet;
+    if (st.mode === 'draw' && ds && ds.done) {
+      var avg = ds.res.reduce(function (x, y) { return x + y; }, 0) / ds.res.length;
+      q.style.display = 'block';
+      q.innerHTML = '<div class="q">Story <b>' + esc(ds.title) + '</b> drawn from memory</div>' +
+        '<div class="score-big">' + Math.round(100 * avg) + ' %</div><div class="fb">' +
+        ds.list.map(function (a, i) {
+          var r = ds.res[i];
+          return '<span class="' + (r >= 0.8 ? 'y' : 'n') + '">' + esc(cname(CONS[a])) + ' ' + Math.round(100 * r) + ' %</span>';
+        }).join(' · ') + '</div><div class="row"><button data-act="setagain">↺ Again</button>' +
+        '<button data-act="setstory">▶ Story</button><button data-act="setfree">Free drawing</button></div>';
+      return;
+    }
     if (st.mode === 'explore' || !st.target) { q.style.display = 'none'; return; }
     q.style.display = 'block';
     var t = st.target, html = '';
@@ -813,7 +828,8 @@
       html += '</div>';
     } else if (st.mode === 'draw') {
       var r = st.result;
-      html += '<div class="q">Draw <b>' + esc(cname(t)) + '</b> – click star to star</div>';
+      html += (ds ? '<div class="hint" style="margin:0">Story “' + esc(ds.title) + '” · ' + Math.min(ds.i + (st.answered ? 0 : 1), ds.list.length) + '/' + ds.list.length + '</div>' : '') +
+        '<div class="q">Draw <b>' + esc(cname(t)) + '</b> – click star to star</div>';
       if (r) html += '<div class="fb"><span class="score-big">' + Math.round(100 * r.pct) + ' %</span> &nbsp;' +
         '<span class="y">' + r.ok + '/' + r.total + ' lines</span>' + (r.wrong ? ' · <span class="n">' + r.wrong + ' extra</span>' : '') +
         (r.missed ? ' · <span style="color:#f2c94c">' + r.missed + ' missing (dashed)</span>' : '') + '</div>';
@@ -853,6 +869,9 @@
     else if (b.dataset.act === 'undo') drawUndo();
     else if (b.dataset.act === 'clearDraw') { st.drawn = []; st.drawFrom = -1; renderQuiz(); req(); }
     else if (b.dataset.act === 'check') checkDraw();
+    else if (b.dataset.act === 'setagain') { st.drawSet = { title: st.drawSet.title, list: st.drawSet.list, i: 0, res: [], story: st.drawSet.story }; setMode('draw', true); }
+    else if (b.dataset.act === 'setstory') openPlayer(st.drawSet.story);
+    else if (b.dataset.act === 'setfree') setMode('draw');
     else if (b.dataset.act === 'giveup') { st.picked = null; st.answered = true; st.streak = 0; cstat(st.target.abbr)[1]++; cstat(st.target.abbr)[2] = 0; save(); flyTo(st.target.lra, st.target.ldec); renderQuiz(); renderScore(); }
   });
   document.addEventListener('keydown', function (e) {
@@ -1025,7 +1044,7 @@
     $('stories').style.display = 'none';
     player.story = s; player.url = URL.createObjectURL(s.audio);
     player.audio = new Audio(player.url);
-    player.audio.onended = function () { renderCtl(); };
+    player.audio.onended = function () { renderCtl(); $('pSub').textContent = 'Now draw them from memory → ✏️ Draw them'; };
     player.active = []; player.cue = -1; player.edit = false;
     renderPlayer(); applyAt(0); renderSel(); req();
   }
@@ -1074,7 +1093,8 @@
     el.innerHTML = '<div class="sub" id="pSub"></div><div class="ctl"><button id="pPP" data-act="pp">▶</button>' +
       '<span class="ttl">' + esc(s.title) + '</span><div class="seek"><div class="ticks" id="pTicks"></div>' +
       '<input type="range" id="pSeek" min="0" max="' + s.duration + '" step="0.05" value="0"></div>' +
-      '<span id="pTime"></span><button data-act="retake" title="Record this story again (replaces this take)">↺ Retake</button>' +
+      '<span id="pTime"></span><button data-act="drawthem" title="Draw this story\'s constellations from memory">✏️ Draw them</button>' +
+      '<button data-act="retake" title="Record this story again (replaces this take)">↺ Retake</button>' +
       '<button data-act="edit" title="Fix cues and subtitles">✎</button><button data-act="close" title="Close">✕</button></div>' +
       '<div id="pEdit"></div>';
     renderTicks(); updTime(); renderCtl();
@@ -1096,6 +1116,20 @@
     seeking = true; player.audio.currentTime = +e.target.value; applyAt(+e.target.value); updTime();
   });
   $('player').addEventListener('change', function (e) { if (e.target.id === 'pSeek') seeking = false; });
+
+  // --- after a story: draw its constellations from memory, in order of appearance ---
+  function storyCons(s) {
+    var out = [];
+    s.cues.forEach(function (c) { c.sel.forEach(function (a) { if (CONS[a] && out.indexOf(a) < 0) out.push(a); }); });
+    return out;
+  }
+  function startStoryDraw(s) {
+    var list = storyCons(s);
+    if (!list.length) { $('pSub').textContent = 'This story has no constellations to draw.'; return; }
+    closePlayer();
+    st.drawSet = { title: s.title, list: list, i: 0, res: [], story: s };
+    setMode('draw', true);
+  }
 
   // --- fix-up editor: shift/delete cues, toggle constellations at the playhead, correct subtitles ---
   function cname3(a) { return CONS[a] ? cname(CONS[a]) : a; }
@@ -1134,6 +1168,7 @@
     if (act === 'pp') { if (player.audio.paused) playPlayer(); else pausePlayer(); }
     else if (act === 'close') { closePlayer(); releaseMic(); }
     else if (act === 'retake') startRec(s);
+    else if (act === 'drawthem') startStoryDraw(s);
     else if (act === 'edit') { player.edit = !player.edit; renderEdit(); }
     else if (act === 'nudge') { s.cues[i].t = Math.max(0, +(s.cues[i].t + +b.dataset.d).toFixed(2)); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
     else if (act === 'delcue') { s.cues.splice(i, 1); saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit(); }
@@ -1241,7 +1276,8 @@
 
   // ---------- UI wiring ----------
   function setSeg(id, v) { [].forEach.call($(id).children, function (b) { b.classList.toggle('on', b.dataset.v === v); }); }
-  function setMode(m) {
+  function setMode(m, keepSet) {
+    if (!keepSet) st.drawSet = null;
     $('starinfo').style.display = 'none';
     if (m !== 'explore') { closePlayer(); if (rec) stopRec(); }
     st.mode = m; st.target = null; st.answered = false; st.streak = 0; st.score = 0;
