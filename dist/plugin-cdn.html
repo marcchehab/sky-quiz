@@ -141,10 +141,12 @@
   #pEdit .sl [contenteditable] { flex: 1; outline: none; border-bottom: 1px dotted #3a3f8f; }
   #pEdit h4 { margin: 8px 0 2px; font-size: 12px; color: #f2c94c; }
   #pEdit .gen { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+  #pEdit .gen textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; font: 12px/1.35 inherit; background: #0b0d33; color: #e8eaf6; border: 1px solid #3a3f8f; padding: 3px 5px; margin: 4px 0; }
   #pEdit .gen input { flex: 1; min-width: 0; font-size: 12px; background: #0b0d33; color: #e8eaf6; border: 1px solid #3a3f8f; padding: 2px 4px; }
   #pEdit .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
   #pEdit .thumbs img { width: 90px; height: 90px; cursor: pointer; border: 2px solid #3a3f8f; }
   #pEdit .thumbs img:hover { border-color: #f2c94c; }
+  #pEdit .thumbs img.on { border-color: #f2c94c; }
   #recbar .big { font-size: 42px; text-align: center; color: #f87171; line-height: 1.1; }
   #recbar .dot { color: #f87171; animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: .2; } }
@@ -1142,6 +1144,9 @@
     seeking = true; player.audio.currentTime = +e.target.value; applyAt(+e.target.value); updTime();
   });
   $('player').addEventListener('change', function (e) { if (e.target.id === 'pSeek') seeking = false; });
+  document.addEventListener('mouseup', function () {   // keep the prompt box height across re-renders
+    var ta = $('artText'); if (ta && player.gen) player.gen.th = ta.offsetHeight;
+  });
 
   // --- after a story: draw its constellations from memory, in order of appearance ---
   function storyCons(s) {
@@ -1294,10 +1299,13 @@
   var ART_FADE = 0.8, ART_GRID = 8;
   function placeUV(a, u, v) {
     var q = a.place || { x: 0, y: 0, s: 1, r: 0 }, c = Math.cos(q.r), s = Math.sin(q.r);
+    if (q.f) u = -u;   // mirrored left-right
     return [q.x + q.s * (c * u - s * v), q.y + q.s * (s * u + c * v)];
   }
   function drawArt() {
-    var t = ptime();
+    var t = ptime(), pa = player.place;
+    // while placing, show the others as they look when the placed picture is fully in
+    if (pa) t = Math.max(pa.t0 + ART_FADE, Math.min(pa.t1 - ART_FADE, t));
     player.story.art.forEach(function (a) {
       var placing = player.place === a, al = placing ? 1 : Math.min(1, (t - a.t0) / ART_FADE, (a.t1 - t) / ART_FADE);
       if (al <= 0) return;
@@ -1342,7 +1350,7 @@
   function savePlaceSoon() { clearTimeout(placeT); placeT = setTimeout(saveStory, 300); }
 
   // ComfyUI runs locally for the author: python main.py --enable-cors-header '*'
-  var COMFY = 'http://127.0.0.1:8188', ART_N = 1024, ART_VARIANTS = 4;
+  var COMFY = 'http://127.0.0.1:8188', ART_N = 1024;
   var ART_STYLE = 'luminous pale gold fine line drawing on pure black background, elegant antique star atlas illustration, ' +
     'glowing thin outlines, minimal, no text, no stars, no background details, ';
   function comfyWorkflow(text, seed) {
@@ -1380,6 +1388,29 @@
       });
     });
   }
+  // OpenRouter (cloud, ~10 s per picture); the author's key stays in this browser's localStorage
+  var OR_MODEL = 'google/gemini-3.1-flash-image';
+  function orKey() {
+    var k = '';
+    try { k = localStorage.getItem('skyOpenRouterKey') || ''; } catch (e) {}
+    if (!k) {
+      k = (prompt('OpenRouter API key (stored only in this browser):') || '').trim();
+      if (k) try { localStorage.setItem('skyOpenRouterKey', k); } catch (e) {}
+    }
+    return k;
+  }
+  function openRouterRun(text, key) {
+    return fetch('https://openrouter.ai/api/v1/images', { method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: OR_MODEL, prompt: ART_STYLE + text, aspect_ratio: '1:1' }) }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || !j.data || !j.data[0]) throw new Error('OpenRouter ' + r.status + (j.error ? ': ' + j.error.message : ''));
+        var d = j.data[0];
+        if (d.b64_json) return fetch('data:' + (d.media_type || 'image/png') + ';base64,' + d.b64_json).then(function (x) { return x.blob(); });
+        return fetch(d.url).then(function (x) { return x.blob(); });
+      });
+    });
+  }
   // darken the near-black background to true black (so 'screen' leaves the sky untouched) and store as webp
   function cleanArt(blob) {
     return createImageBitmap(blob).then(function (bm) {
@@ -1400,38 +1431,48 @@
   function startArt(s, i) {
     var c = s.cues[i];
     if (!c.sel.length) { $('pSub').textContent = 'Switch a constellation on in this cue first.'; return; }
-    player.gen = { i: i, cons: c.sel.slice(), text: player.gen && player.gen.text || '', thumbs: [], busy: 0, msg: '' };
+    player.gen = { i: i, cons: c.sel.slice(), text: player.gen && player.gen.text || '', thumbs: [], busy: 0, msg: '', n: player.gen && player.gen.n || 1, engine: player.gen && player.gen.engine || 'cloud' };
     renderEdit();
   }
   function generateArt(s) {
     var gen = player.gen, list = gen.cons.filter(function (a) { return CONS[a]; });
     if (!list.length) { gen.msg = 'Unknown constellations.'; return renderEdit(); }
-    gen.busy = ART_VARIANTS;
-    Promise.resolve().then(function () {
-      gen.msg = 'Generating ' + ART_VARIANTS + ' pictures (about 1–2 min each) …'; renderEdit();
-      var chain = Promise.resolve();
-      for (var n = 0; n < ART_VARIANTS; n++) chain = chain.then(function () {
-        var seed = Math.floor(Math.random() * 2147483647);
-        return comfyRun(gen.text, seed).then(cleanArt).then(function (b) {
-          if (player.gen !== gen) return;
-          gen.thumbs.push({ img: b, seed: seed, url: URL.createObjectURL(b) }); gen.busy--; renderEdit();
-        });
+    var cnt = Math.max(1, Math.min(8, gen.n | 0 || 1)), cloud = gen.engine !== 'comfy', key = cloud && orKey();
+    if (cloud && !key) { gen.msg = 'No OpenRouter key.'; return renderEdit(); }
+    gen.busy = cnt; gen.batch = (gen.batch || 0) + 1; gen.picked = null; gen.k = null;   // a new batch makes a new picture
+    var batch = gen.batch;
+    function one() {
+      var seed = Math.floor(Math.random() * 2147483647);
+      return (cloud ? openRouterRun(gen.text, key) : comfyRun(gen.text, seed)).then(cleanArt).then(function (b) {
+        if (player.gen !== gen) return;
+        gen.thumbs.push({ img: b, seed: cloud ? null : seed, url: URL.createObjectURL(b), batch: batch }); gen.busy--; renderEdit();
       });
+    }
+    Promise.resolve().then(function () {
+      gen.msg = 'Generating ' + cnt + (cnt > 1 ? ' pictures' : ' picture') + (cloud ? ' (about 10 s) …' : ' (about 1–2 min each) …'); renderEdit();
+      if (cloud) return Promise.all(Array.apply(null, Array(cnt)).map(one));
+      var chain = Promise.resolve();
+      for (var n = 0; n < cnt; n++) chain = chain.then(one);
       return chain;
-    }).then(function () { if (player.gen === gen) { gen.msg = 'Pick one.'; gen.busy = 0; renderEdit(); } },
+    }).then(function () { if (player.gen === gen) { if (!gen.picked) gen.msg = 'Pick one.'; gen.busy = 0; renderEdit(); } },
       function (e) {
         if (player.gen !== gen) return;
-        gen.busy = 0; gen.msg = 'ComfyUI not reachable or failed (' + e.message + '). Start it with --enable-cors-header.'; renderEdit();
+        gen.busy = 0; gen.msg = gen.engine === 'comfy' ? 'ComfyUI not reachable or failed (' + e.message + '). Start it with --enable-cors-header.' : e.message;
+        if (/ 401/.test(e.message)) try { localStorage.removeItem('skyOpenRouterKey'); } catch (x) {}
+        renderEdit();
       });
   }
   function pickArt(s, k) {
     var gen = player.gen, th = gen.thumbs[k], c = s.cues[gen.i];
     s.art = s.art || [];
-    s.art.push({ t0: c.t, t1: artEnd(s, gen.i, gen.cons), cons: gen.cons.slice(), prompt: gen.text, seed: th.seed, img: th.img,
-      frame: frameFor(gen.cons.filter(function (x) { return CONS[x]; })), place: { x: 0, y: 0, s: 1, r: 0 } });
-    s.art.sort(function (a, b) { return a.t0 - b.t0; });
-    gen.thumbs.forEach(function (x) { URL.revokeObjectURL(x.url); });
-    player.gen = null; player.place = s.art.filter(function (a) { return a.img === th.img; })[0];
+    if (gen.picked && s.art.indexOf(gen.picked) >= 0 && th.batch === gen.batch) { gen.picked.img = th.img; gen.picked.seed = th.seed; }   // swap, keep placement
+    else {
+      gen.picked = { t0: c.t, t1: artEnd(s, gen.i, gen.cons), cons: gen.cons.slice(), prompt: gen.text, seed: th.seed, img: th.img,
+        frame: frameFor(gen.cons.filter(function (x) { return CONS[x]; })), place: { x: 0, y: 0, s: 1, r: 0 } };
+      s.art.push(gen.picked);
+      s.art.sort(function (a, b) { return a.t0 - b.t0; });
+    }
+    gen.k = k; gen.msg = 'Picked – click another to swap, × to close.'; player.place = gen.picked;
     saveStory(); renderEdit(); req();
   }
   function renderArtEdit() {
@@ -1439,10 +1480,14 @@
     if (gen) {
       h += '<h4>🎨 Picture for ' + esc(gen.cons.map(cname3).join(', ')) + ' at ' + s.cues[gen.i].t.toFixed(1) + ' s</h4>' +
         '<div class="gen"><input id="artCons" value="' + esc(gen.cons.join(' ')) + '" style="flex:0 0 90px" title="Constellations (abbreviations)">' +
-        '<input id="artText" placeholder="e.g. a young bear riding a long dragon" value="' + esc(gen.text) + '">' +
+        '<span style="flex:1"></span>' +
+        '<input id="artN" type="number" min="1" max="8" value="' + gen.n + '" style="flex:0 0 44px" title="How many pictures">' +
+        '<select id="artEngine" title="Picture generator"><option value="cloud"' + (gen.engine !== 'comfy' ? ' selected' : '') + '>Gemini (OpenRouter)</option>' +
+        '<option value="comfy"' + (gen.engine === 'comfy' ? ' selected' : '') + '>FLUX (local ComfyUI)</option></select>' +
         '<button data-act="artgen"' + (gen.busy ? ' disabled' : '') + '>Generate</button><button data-act="artcancel">×</button></div>' +
+        '<div class="gen" style="display:block"><textarea id="artText" rows="4" style="height:' + (gen.th || 80) + 'px" placeholder="e.g. a young bear riding a long dragon">' + esc(gen.text) + '</textarea></div>' +
         '<div class="hint">' + esc(gen.msg) + '</div><div class="thumbs">' +
-        gen.thumbs.map(function (x, k) { return '<img src="' + x.url + '" data-act="artpick" data-k="' + k + '" title="Use this one">'; }).join('') + '</div>';
+        gen.thumbs.map(function (x, k) { return '<img src="' + x.url + '" data-act="artpick" data-k="' + k + '" title="Use this one"' + (gen.k === k ? ' class="on"' : '') + '>'; }).join('') + '</div>';
     }
     if (s.art && s.art.length) h += '<h4>🎨 Pictures</h4>' + s.art.map(function (a, i) {
       return '<div class="cue" data-ai="' + i + '"><span>' + a.t0.toFixed(1) + '–' + a.t1.toFixed(1) + ' s</span><i>' +
@@ -1450,6 +1495,7 @@
         '<button data-act="artnudge" data-k="t0" data-d="-0.5">−½</button><button data-act="artnudge" data-k="t0" data-d="0.5">+½</button> … ' +
         '<button data-act="artnudge" data-k="t1" data-d="-0.5">−½</button><button data-act="artnudge" data-k="t1" data-d="0.5">+½</button>' +
         '<button data-act="artplace" title="Move, size and turn it on the sky"' + (player.place === a ? ' style="border-color:#f2c94c"' : '') + '>📌</button>' +
+        '<button data-act="artflip" title="Mirror left–right">⇋</button>' +
         '<button data-act="artdel">×</button></div>';
     }).join('');
     if (player.place) h += '<div class="hint">📌 Drag = move · wheel = size · Shift + drag/wheel = turn · 📌 again = done</div>';
@@ -1487,6 +1533,8 @@
     var i = e.target.dataset && e.target.dataset.xv;
     if (i != null) { player.story.sfx[+i].vol = +e.target.value; saveStory(); }
     if (e.target.id === 'artText' && player.gen) player.gen.text = e.target.value;
+    if (e.target.id === 'artN' && player.gen) player.gen.n = +e.target.value || 1;
+    if (e.target.id === 'artEngine' && player.gen) player.gen.engine = e.target.value;
     if (e.target.id === 'artCons' && player.gen) player.gen.cons = e.target.value.trim().split(/[\s,]+/).filter(Boolean);
   });
   // editor buttons for pictures and sounds; returns true if handled
@@ -1498,6 +1546,7 @@
     else if (act === 'artcancel') { player.gen = null; renderEdit(); }
     else if (act === 'artnudge') { var a = s.art[+ai.dataset.ai], k = b.dataset.k; a[k] = Math.max(0, +(a[k] + +b.dataset.d).toFixed(2)); saveStory(); renderEdit(); req(); }
     else if (act === 'artdel') { if (player.place === s.art[+ai.dataset.ai]) player.place = null; s.art.splice(+ai.dataset.ai, 1); saveStory(); renderEdit(); req(); }
+    else if (act === 'artflip') { var fq = placeOf(s.art[+ai.dataset.ai]); fq.f = !fq.f; saveStory(); req(); }
     else if (act === 'artplace') { var pa = s.art[+ai.dataset.ai]; player.place = player.place === pa ? null : pa; renderEdit(); req(); }
     else if (act === 'addsfx') $('sfxFile').click();
     else if (act === 'sfxnudge') { var x = s.sfx[+xi.dataset.xi]; x.t = Math.max(0, +(x.t + +b.dataset.d).toFixed(2)); saveStory(); renderEdit(); }

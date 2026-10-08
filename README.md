@@ -29,8 +29,9 @@ in sync. Stories are stored locally in the browser (IndexedDB); ⤓ exports a `.
 (JSON + audio), Import reads it back. CC creates subtitles with Whisper (runs in the browser,
 model downloaded once). ✎ in the player shifts/deletes cues and fixes subtitle text.
 
-**Pictures and sounds (✎ editor):** 🎨 on a cue generates 4 pictures for its constellations with a
-local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (FLUX dev GGUF; start it with
-`python main.py --enable-cors-header '*'`), you pick one and place it with 📌 (drag = move, wheel =
+**Pictures and sounds (✎ editor):** 🎨 on a cue generates pictures for its constellations, by default
+with Gemini via [OpenRouter](https://openrouter.ai) (key asked once, kept in the browser; ~10 s, ~$0.07
+each) or with a local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (FLUX dev GGUF; start it with
+`python main.py --enable-cors-header '*'`); you pick one and place it with 📌 (drag = move, wheel =
 size, Shift = turn); it stays fixed to the stars and fades in/out with the constellations.
 🔊 adds a local sound file at the playhead. Both are exported in the `.skystory` file.
