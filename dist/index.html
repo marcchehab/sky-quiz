@@ -776,16 +776,25 @@
     if (last && t - last.t < 0.3 && last.sel.join() === c.sel.join()) { last.view = c.view; return; }
     rec.cues.push(c);
   }
-  function startRec() {
+  // the mic stream is kept open between takes, so a retake doesn't ask for permission again
+  var mic = null;
+  function getMic() {
+    if (mic && mic.getTracks().every(function (t) { return t.readyState === 'live'; })) return Promise.resolve(mic);
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (m) { return (mic = m); });
+  }
+  function releaseMic() { if (mic) mic.getTracks().forEach(function (t) { t.stop(); }); mic = null; }
+  window.addEventListener('pagehide', releaseMic);
+  // replace: a story whose take is redone (keeps id, title and creation date)
+  function startRec(replace) {
     if (!navigator.mediaDevices || !window.MediaRecorder) { storyMsg('Recording needs microphone access (open the page via https or as a local file).'); return; }
-    var title = prompt('Title of the story', 'Little Ursa and her dragon');
+    var title = replace ? replace.title : prompt('Title of the story', 'Little Ursa and her dragon');
     if (!title) return;
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) { beginRec(title, stream); },
+    getMic().then(function (stream) { beginRec(title, stream, replace); },
       function (e) { storyMsg('Microphone not available: ' + e.message); });
   }
-  function beginRec(title, stream) {
+  function beginRec(title, stream, replace) {
     closePlayer(); setMode('explore'); $('stories').style.display = 'none';
-    rec = { title: title, stream: stream, chunks: [], cues: [], t0: 0, keepSel: st.sel, mr: new MediaRecorder(stream) };
+    rec = { title: title, stream: stream, replace: replace || null, chunks: [], cues: [], t0: 0, keepSel: st.sel, mr: new MediaRecorder(stream) };
     rec.mr.ondataavailable = function (e) { if (e.data.size) rec.chunks.push(e.data); };
     st.sel = []; renderSel(); req();
     var n = 3, r = rec; renderRec(n);
@@ -802,24 +811,37 @@
     b.innerHTML = count
       ? '<div class="big">' + count + '</div><div class="hint" style="text-align:center">Talk, click constellations, rotate and zoom – it all gets recorded.</div>'
       : '<div class="ctl"><span class="dot">●</span><b>REC</b><span id="recTime">0:00</span><i class="ttl">' + esc(rec.title) +
-        '</i><span class="sp"></span><button data-act="stop">■ Stop</button></div><div class="hint">Click a constellation to light it up, click again to switch it off.</div>';
+        '</i><span class="sp"></span><button data-act="restart" title="Discard this take and start again">↺ Restart</button><button data-act="stop">■ Stop</button></div><div class="hint">Click a constellation to light it up, click again to switch it off.</div>';
   }
-  function stopRec() {
-    var r = rec; if (!r) return;
+  function endRec() {
+    var r = rec; if (!r) return null;
     rec = null; clearInterval(r.cd); clearInterval(r.iv);
     $('recbar').style.display = 'none';
     st.sel = r.keepSel; renderSel(); req();
+    return r;
+  }
+  function restartRec() {
+    var r = endRec(); if (!r) return;
+    r.mr.onstop = null;
+    if (r.mr.state !== 'inactive') r.mr.stop();
+    beginRec(r.title, r.stream, r.replace);
+  }
+  function stopRec() {
+    var r = endRec(); if (!r) return;
     var dur = r.t0 ? +((performance.now() - r.t0) / 1000).toFixed(2) : 0;
     r.mr.onstop = function () {
-      r.stream.getTracks().forEach(function (t) { t.stop(); });
       if (!r.t0) return;   // cancelled during the countdown
-      var s = { id: 's' + Date.now(), title: r.title, created: Date.now(), duration: dur,
+      var old = r.replace;
+      var s = { id: old ? old.id : 's' + Date.now(), title: r.title, created: old ? old.created : Date.now(), duration: dur,
         audio: new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }), cues: r.cues, subs: [] };
       dbPut(s).then(loadStories).then(function () { openPlayer(s); });
     };
     if (r.mr.state !== 'inactive') r.mr.stop(); else r.mr.onstop();
   }
-  $('recbar').addEventListener('click', function (e) { if (e.target.dataset.act === 'stop') stopRec(); });
+  $('recbar').addEventListener('click', function (e) {
+    if (e.target.dataset.act === 'stop') stopRec();
+    else if (e.target.dataset.act === 'restart') restartRec();
+  });
 
   // --- playback (HTMLAudioElement; an Eduskript build would swap this for Web Audio, CSP blocks media-src) ---
   function openPlayer(s) {
@@ -875,7 +897,8 @@
     el.innerHTML = '<div class="sub" id="pSub"></div><div class="ctl"><button id="pPP" data-act="pp">▶</button>' +
       '<span class="ttl">' + esc(s.title) + '</span><div class="seek"><div class="ticks" id="pTicks"></div>' +
       '<input type="range" id="pSeek" min="0" max="' + s.duration + '" step="0.05" value="0"></div>' +
-      '<span id="pTime"></span><button data-act="edit" title="Fix cues and subtitles">✎</button><button data-act="close" title="Close">✕</button></div>' +
+      '<span id="pTime"></span><button data-act="retake" title="Record this story again (replaces this take)">↺ Retake</button>' +
+      '<button data-act="edit" title="Fix cues and subtitles">✎</button><button data-act="close" title="Close">✕</button></div>' +
       '<div id="pEdit"></div>';
     renderTicks(); updTime(); renderCtl();
     if (player.edit) renderEdit();
@@ -932,7 +955,8 @@
     var b = e.target.closest('button'); if (!b) return;
     var act = b.dataset.act, row = b.closest('.cue'), s = player.story, i = row ? +row.dataset.i : -1;
     if (act === 'pp') { if (player.audio.paused) playPlayer(); else pausePlayer(); }
-    else if (act === 'close') closePlayer();
+    else if (act === 'close') { closePlayer(); releaseMic(); }
+    else if (act === 'retake') startRec(s);
     else if (act === 'edit') { player.edit = !player.edit; renderEdit(); }
     else if (act === 'nudge') { s.cues[i].t = Math.max(0, +(s.cues[i].t + +b.dataset.d).toFixed(2)); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
     else if (act === 'delcue') { s.cues.splice(i, 1); saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit(); }
@@ -973,7 +997,7 @@
   $('stories').addEventListener('click', function (e) {
     var act = e.target.dataset.act; if (!act) return;
     var li = e.target.closest('li'), s = li && stories.filter(function (x) { return x.id === li.dataset.id; })[0];
-    if (act === 'x') { $('stories').style.display = 'none'; renderSel(); }
+    if (act === 'x') { $('stories').style.display = 'none'; renderSel(); releaseMic(); }
     else if (act === 'rec') startRec();
     else if (act === 'import') $('importFile').click();
     else if (act === 'play') openPlayer(s);
