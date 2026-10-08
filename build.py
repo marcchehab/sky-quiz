@@ -8,7 +8,10 @@ D = ROOT / "data"
 MAXMAG = 6.0
 MW_STEP = 3          # keep every n-th Milky Way vertex
 MW_LEVELS = 4
-VERSION = "v1.0.0"   # git tag the CDN plugin loads its data from
+VERSION = "v1.1.0"   # git tag the CDN plugin loads its data from
+
+# German names that differ from d3-celestial's (common usage)
+DE_FIX = {"Hyi": "Kleine Wasserschlange", "Phe": "Phönix", "Car": "Schiffskiel"}
 
 def load(f): return json.load(open(D / f))
 def ra(x): return round(x % 360, 2)
@@ -36,7 +39,8 @@ for k, v in load("starnames.json").items():
 cons = {}
 for f in load("constellations.json")["features"]:
     p = f["properties"]; lon, lat = f["geometry"]["coordinates"]
-    cons[f["id"]] = [p["name"], p["gen"], int(p["rank"]), ra(lon), r2(lat)]
+    de = DE_FIX.get(f["id"], p["de"]).replace("\u2005", " ").replace("ß", "ss")
+    cons[f["id"]] = [p["name"], p["gen"], int(p["rank"]), ra(lon), r2(lat), de]
 
 lines = {}
 for f in load("constellations.lines.json")["features"]:

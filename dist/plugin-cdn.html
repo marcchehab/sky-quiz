@@ -10,6 +10,7 @@
     level      = 1 | 2 | 3                  (1 = 22 famous, 2 = 46, 3 = all 88; default 1)
     projection = map | sphere               (default map)
     height     = px                         (inline height, default 560)
+    lang       = en | de | en,de             (constellation names; default en)
 
   Sky data: d3-celestial by Olaf Frohn (BSD-3-Clause) — Yale BSC stars to mag 6,
   IAU constellation boundaries, Milky Way outlines.
@@ -90,6 +91,10 @@
   #sel li b { font-style: normal; opacity: .5; margin-left: 6px; padding: 0 3px; }
   #sel li b:hover { opacity: 1; color: #f87171; }
   #sel button { font-size: 11px; padding: 1px 6px; background: #1b1e5e; color: #e8eaf6; border-color: #3a3f8f; }
+  #langs button { display: inline-flex; align-items: center; padding: 4px 8px; }
+  #langs button svg { display: block; border-radius: 2px; }
+  #langs button:not(.on) svg { opacity: .35; filter: grayscale(1); }
+  #langs button.on { background: var(--panel); box-shadow: inset 0 -2px 0 var(--accent); color: var(--fg); }
   .credit { font-size: 11px; color: var(--muted); }
   .credit a { color: inherit; }
 </style>
@@ -106,6 +111,9 @@
       <button data-v="map" title="Rectangular RA/Dec chart">Chart</button><button data-v="sphere" title="Stereographic view, drag to rotate">Sphere</button>
     </div>
     <span class="sp"></span>
+    <div class="seg" id="langs" title="Constellation names: English (Latin) / Deutsch">
+      <button data-lang="en" title="English"><svg viewBox="0 0 60 30" width="24" height="12"><rect width="60" height="30" fill="#012169"/><path d="M0,0 60,30M60,0 0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 60,30M60,0 0,30" stroke="#C8102E" stroke-width="2"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></svg></button><button data-lang="de" title="Deutsch"><svg viewBox="0 0 32 32" width="14" height="14"><rect width="32" height="32" fill="#d52b1e"/><path d="M13 6h6v7h7v6h-7v7h-6v-7H6v-6h7z" fill="#fff"/></svg></button>
+    </div>
     <button id="recenter" title="Centre on 0h RA, Dec 0°">♈ 0h/0°</button>
     <button id="layersBtn">Layers</button>
     <button id="fsBtn" title="Fullscreen">⛶</button>
@@ -122,7 +130,7 @@
   <div class="credit">Drag to rotate · scroll or pinch to zoom · click to add to your list · data: <a href="https://github.com/ofrohn/d3-celestial" target="_blank" rel="noopener">d3-celestial</a> (Yale BSC, IAU boundaries)</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/gh/marcchehab/sky-quiz@v1.0.0/dist/sky-data.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/marcchehab/sky-quiz@v1.1.0/dist/sky-data.js"></script>
 <script>
 (function () {
   var SKY = window.SKY_DATA;
@@ -141,7 +149,7 @@
     mode: 'explore', level: 1, proj: 'map', ra0: 0, dec0: 0, S: 0,
     layers: { lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
     target: null, picked: null, answered: false, hinted: false, opts: null,
-    score: 0, streak: 0, sel: []   // sel: constellation abbrs in the order they were picked
+    score: 0, streak: 0, lang: { en: true, de: false }, sel: []   // sel: constellation abbrs in the order they were picked
   };
   var stats = { best: { name: 0, find: 0 }, c: {} };   // c[abbr] = [right, wrong, run]
   var W = 0, H = 0, dpr = 1, cx = 0, cy = 0;
@@ -188,7 +196,7 @@
   Object.keys(SKY.c).forEach(function (a) {
     var c = SKY.c[a];
     CONS[a] = {
-      abbr: a, name: c[0], gen: c[1], rank: c[2], lra: c[3], ldec: c[4], nb: SKY.nb[a] || [],
+      abbr: a, name: c[0], gen: c[1], rank: c[2], lra: c[3], ldec: c[4], de: c[5] || c[0], nb: SKY.nb[a] || [],
       lines: (SKY.l[a] || []).map(function (l) { return densifyGC(l, 2); }),
       polys: (SKY.b[a] || []).map(function (p) { return densify(p, 1.5, true); })
     };
@@ -360,6 +368,12 @@
     return null;
   }
 
+  // display name in the active language(s): English uses the IAU (Latin) names
+  function cname(c) {
+    if (st.lang.en && st.lang.de) return c.name === c.de ? c.name : c.name + ' · ' + c.de;
+    return st.lang.de ? c.de : c.name;
+  }
+
   // ---------- drawing ----------
   var raf = 0;
   function req() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; draw(); }); }
@@ -470,8 +484,12 @@
     if (showNames) {
       ABBR.forEach(function (a) {
         var c = CONS[a], p = proj(c.lra, c.ldec); if (!p) return;
-        var hi = st.target === c;
-        label(c.name, p[0], p[1], (hi ? 'italic bold 15px' : 'italic 13px') + ' "DejaVu Sans", Verdana, sans-serif', hi ? COL.targetEdge : COL.name);
+        var hi = st.target === c, col = hi ? COL.targetEdge : COL.name;
+        var f1 = (hi ? 'italic bold 15px' : 'italic 13px') + ' "DejaVu Sans", Verdana, sans-serif';
+        if (st.lang.en && st.lang.de && c.de !== c.name) {
+          label(c.name, p[0], p[1] - 7, f1, col);
+          label(c.de, p[0], p[1] + 8, (hi ? 'bold 13px' : '11px') + ' "DejaVu Sans", Verdana, sans-serif', hi ? col : '#aab1d6');
+        } else label(st.lang.de ? c.de : c.name, p[0], p[1], st.lang.de ? f1.replace('italic ', '') : f1, col);
       });
     }
   }
@@ -583,18 +601,18 @@
       html += '<div class="q">Which constellation is highlighted?</div><div class="opts">';
       st.opts.forEach(function (o, i) {
         var cls = st.answered ? (o === t ? 'ok' : (o === st.picked ? 'bad' : '')) : '';
-        html += '<button data-a="' + o.abbr + '" class="' + cls + '"><kbd>' + (i + 1) + '</kbd>' + esc(o.name) + '</button>';
+        html += '<button data-a="' + o.abbr + '" class="' + cls + '"><kbd>' + (i + 1) + '</kbd>' + esc(cname(o)) + '</button>';
       });
       html += '</div>';
     } else {
-      html += '<div class="q">Click on <b>' + esc(t.name) + '</b></div>';
+      html += '<div class="q">Click on <b>' + esc(cname(t)) + '</b></div>';
       if (st.hinted && !st.answered) html += '<div class="fb">Hint: around RA ' + fmtRA(t.lra) + ', Dec ' + fmtDec(t.ldec) + '</div>';
     }
     html += '<div class="fb">';
     if (st.answered) {
-      var info = '<i>' + esc(t.name) + '</i> (' + t.abbr + ', gen. <i>' + esc(t.gen) + '</i>) — RA ' + fmtRA(t.lra) + ', Dec ' + fmtDec(t.ldec);
+      var info = '<i>' + esc(cname(t)) + '</i> (' + t.abbr + ', gen. <i>' + esc(t.gen) + '</i>) — RA ' + fmtRA(t.lra) + ', Dec ' + fmtDec(t.ldec);
       if (st.picked === t) html += '<span class="y">✓ Correct!</span> ' + info;
-      else if (st.picked) html += '<span class="n">✗ That was <i>' + esc(st.picked.name) + '</i>.</span> ' + info;
+      else if (st.picked) html += '<span class="n">✗ That was <i>' + esc(cname(st.picked)) + '</i>.</span> ' + info;
       else html += info;
     }
     html += '</div><div class="row">';
@@ -628,7 +646,7 @@
   function save() {
     clearTimeout(saveT);
     saveT = setTimeout(function () {
-      var payload = { stats: stats, level: st.level, sel: st.sel, updatedAt: Date.now() };
+      var payload = { stats: stats, level: st.level, sel: st.sel, lang: st.lang, updatedAt: Date.now() };
       if (plugin) plugin.setData(payload);
       else try { localStorage.setItem('sky-quiz', JSON.stringify(payload)); } catch (e) {}
     }, 700);
@@ -636,6 +654,7 @@
   function restore(d) {
     if (d && d.stats && d.stats.c) { stats = d.stats; stats.best = stats.best || { name: 0, find: 0 }; }
     if (d && d.level != null) st.level = d.level;
+    if (d && d.lang && (d.lang.en || d.lang.de)) st.lang = { en: !!d.lang.en, de: !!d.lang.de };
     if (d && d.sel) st.sel = d.sel.filter(function (a) { return CONS[a]; });
   }
 
@@ -650,7 +669,7 @@
     if (st.mode !== 'explore' || !n) { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.innerHTML = '<div class="hd"><span>My list (' + n + ')</span><button data-act="clear">Clear</button></div><ol>' +
-      st.sel.map(function (a) { return '<li data-a="' + a + '">' + esc(CONS[a].name) + '<b data-x="' + a + '" title="Remove">×</b></li>'; }).join('') + '</ol>';
+      st.sel.map(function (a) { return '<li data-a="' + a + '">' + esc(cname(CONS[a])) + '<b data-x="' + a + '" title="Remove">×</b></li>'; }).join('') + '</ol>';
   }
   $('sel').addEventListener('click', function (e) {
     var t = e.target;
@@ -672,6 +691,14 @@
   $('modes').addEventListener('click', function (e) { if (e.target.dataset.v) setMode(e.target.dataset.v); });
   $('projs').addEventListener('click', function (e) { if (e.target.dataset.v) setProj(e.target.dataset.v); });
   $('level').addEventListener('change', function () { st.level = +this.value; save(); if (st.mode !== 'explore') { st.target = null; nextQ(); } renderScore(); });
+  function renderLang() { [].forEach.call($('langs').children, function (b) { b.classList.toggle('on', !!st.lang[b.dataset.lang]); }); }
+  $('langs').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var k = b.dataset.lang, other = k === 'en' ? 'de' : 'en';
+    st.lang[k] = !st.lang[k];
+    if (!st.lang[k] && !st.lang[other]) st.lang[other] = true;   // never both off: switching off the last one swaps
+    save(); renderLang(); renderQuiz(); renderSel(); req();
+  });
   $('recenter').addEventListener('click', function () { flyTo(0, 0, defaultScale()); });
 
   var LAYERS = [['lines', 'Constellation lines'], ['bounds', 'Boundaries'], ['names', 'Names'], ['stars', 'Stars'],
@@ -744,7 +771,7 @@
     if (st.mode !== 'explore' || !s) { tip.style.display = 'none'; return; }
     var c = hit(s[0], s[1]);
     if (!c) { tip.style.display = 'none'; return; }
-    tip.innerHTML = '<i>' + esc(c.name) + '</i> · ' + c.abbr;
+    tip.innerHTML = '<i>' + esc(cname(c)) + '</i> · ' + c.abbr;
     tip.style.display = 'block';
     tip.style.left = Math.min(p[0] + 14, W - tip.offsetWidth - 4) + 'px';
     tip.style.top = (p[1] + 16) + 'px';
@@ -765,6 +792,8 @@
     if (+cfg.height) $('sq').style.setProperty('--h', +cfg.height + 'px');
     if (cfg.level != null && cfg.level !== '') st.level = Math.max(0, Math.min(3, +cfg.level || 0));
     if (st.level === 0 && !st.sel.length) st.level = 1;
+    if (cfg.lang) { var ls = String(cfg.lang).split(/[ ,]+/); st.lang = { en: ls.indexOf('en') >= 0, de: ls.indexOf('de') >= 0 }; if (!st.lang.de) st.lang.en = true; }
+    renderLang();
     $('level').value = String(st.level);
     setProj(cfg.projection === 'sphere' ? 'sphere' : 'map');
     new ResizeObserver(resize).observe($('stage'));
