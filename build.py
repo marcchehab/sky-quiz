@@ -23,7 +23,8 @@ def flat(coords, prec=2):
         out += [round(lon % 360, prec), round(lat, prec)]
     return out
 
-stars, idx = [], {}
+stars, idx, sd = [], {}, []
+SN = load("starnames.json")
 for f in load("stars.6.json")["features"]:
     m = f["properties"]["mag"]
     if m > MAXMAG: continue
@@ -31,6 +32,10 @@ for f in load("stars.6.json")["features"]:
     try: bv = round(float(f["properties"].get("bv") or 0.6), 2)
     except ValueError: bv = 0.6
     stars += [ra(lon), r2(lat), round(m, 1), bv]   # 4 values per star
+    # per-star details for click info: "name|German name|Bayer letter|Flamsteed no.|constellation|HIP"
+    n = SN.get(str(f["id"]), {})
+    de = (n.get("de") or "") if (n.get("de") or "") != n.get("name") else ""
+    sd.append("|".join([n.get("name", ""), de, n.get("bayer", ""), n.get("flam", ""), n.get("c", ""), str(f["id"])]))
     idx[str(f["id"])] = (ra(lon), r2(lat), m)
 
 names = []
@@ -73,7 +78,7 @@ for f in load("mw.json")["features"][:MW_LEVELS]:
             if len(pts) >= 4: rings.append(flat(pts, 1))
     mw.append(rings)
 
-data = dict(s=stars, sn=names, c=cons, l=lines, b=bounds, nb=nb, m=messier, mw=mw)
+data = dict(s=stars, sd=sd, sn=names, c=cons, l=lines, b=bounds, nb=nb, m=messier, mw=mw)
 js = json.dumps(data, separators=(",", ":"))
 src = (ROOT / "src" / "plugin.html").read_text()
 frag = src.replace("/*@DATA@*/null", js)

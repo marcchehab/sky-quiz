@@ -134,6 +134,10 @@
   #langs button svg { display: block; border-radius: 2px; }
   #langs button:not(.on) svg { opacity: .35; filter: grayscale(1); }
   #langs button.on { background: var(--panel); box-shadow: inset 0 -2px 0 var(--accent); color: var(--fg); }
+  #starinfo { position: absolute; display: none; background: rgba(8,9,40,.92); border: 1px solid #8c7a2e;
+    border-radius: 6px; padding: 5px 9px; color: #e8eaf6; font-size: 13px; pointer-events: none; z-index: 2; line-height: 1.45; }
+  #starinfo b { color: #f2c94c; font-size: 14px; }
+  #starinfo .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
   .credit { font-size: 11px; color: var(--muted); }
   .credit a { color: inherit; }
 </style>
@@ -166,6 +170,7 @@
     <div id="quiz"></div>
     <div id="layers"></div>
     <div id="sel"></div>
+    <div id="starinfo"></div>
     <div id="stories"></div>
     <div id="player"></div>
     <div id="recbar"></div>
@@ -423,6 +428,36 @@
       for (var j = 0; j < c.polys.length; j++) if (inRing(c.polys[j], ra, dec)) return c;
     }
     return null;
+  }
+
+  // ---------- stars: pick by click ----------
+  // nearest star within a few px of the cursor; brighter stars win ties (they are drawn bigger)
+  function starAt(X, Y) {
+    var s = SKY.s, best = -1, bd = 1e9;
+    for (var i = 0, n = 0; i < s.length; i += 4, n++) {
+      var p = proj(s[i], s[i + 1]); if (!p) continue;
+      var d = Math.hypot(p[0] - X, p[1] - Y);
+      if (d > 4 + Math.max(0, 4 - s[i + 2]) * 1.5) continue;
+      d -= (6 - s[i + 2]) * 0.6;
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+  function starInfoHTML(n) {
+    var f = (SKY.sd[n] || '').split('|'), i = n * 4, s = SKY.s, c = CONS[f[4]];
+    var proper = st.lang.de && f[1] ? (st.lang.en ? f[0] + ' · ' + f[1] : f[1]) : f[0];
+    var desig = c && (f[2] || f[3]) ? (f[2] || f[3]) + ' ' + c.gen : 'HIP ' + f[5];
+    var bv = s[i + 3], col = bv < 0 ? 'blue-white' : bv < 0.3 ? 'white' : bv < 0.6 ? 'yellow-white' : bv < 1 ? 'yellow' : bv < 1.4 ? 'orange' : 'red-orange';
+    return (proper ? '<b>' + esc(proper) + '</b><br>' : '') + esc(desig) + (c ? ' · in <i>' + esc(cname(c)) + '</i>' : '') +
+      '<br><span class="sw" style="background:rgb(' + SCOL[n] + ')"></span>' + col + ' · mag ' + s[i + 2].toFixed(1) +
+      '<br>RA ' + fmtRA(s[i]) + ', Dec ' + fmtDec(s[i + 1]);
+  }
+  function showStar(n, x, y) {
+    var el = $('starinfo');
+    if (n < 0) { el.style.display = 'none'; return; }
+    el.innerHTML = starInfoHTML(n); el.style.display = 'block';
+    el.style.left = Math.max(4, Math.min(x + 14, W - el.offsetWidth - 4)) + 'px';
+    el.style.top = Math.max(4, Math.min(y + 14, H - el.offsetHeight - 4)) + 'px';
   }
 
   // display name in the active language(s): English uses the IAU (Latin) names
@@ -1111,6 +1146,7 @@
   // ---------- UI wiring ----------
   function setSeg(id, v) { [].forEach.call($(id).children, function (b) { b.classList.toggle('on', b.dataset.v === v); }); }
   function setMode(m) {
+    $('starinfo').style.display = 'none';
     if (m !== 'explore') { closePlayer(); if (rec) stopRec(); }
     st.mode = m; st.target = null; st.answered = false; st.streak = 0; st.score = 0;
     $('sq').dataset.mode = m; setSeg('modes', m);
@@ -1132,6 +1168,7 @@
   });
   $('recenter').addEventListener('click', function () { flyTo(0, 0, defaultScale()); });
 
+  $('cv').addEventListener('pointerleave', function () { cv.style.cursor = ''; });
   var LAYERS = [['real', 'Realistic stars (brightness + colour)'], ['lines', 'Constellation lines'], ['bounds', 'Boundaries'], ['names', 'Names'], ['stars', 'Stars'],
     ['messier', 'Messier objects'], ['grid', 'RA/Dec grid'], ['mw', 'Milky Way'], ['ecl', 'Ecliptic + months'], ['gal', 'Galactic equator']];
   $('layers').innerHTML = LAYERS.map(function (l) {
@@ -1154,6 +1191,7 @@
   function local(e) { var r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
   cv.addEventListener('pointerdown', function (e) {
     try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    $('starinfo').style.display = 'none';
     if (player.story) pausePlayer();
     ptrs[e.pointerId] = local(e);
     var ids = Object.keys(ptrs);
@@ -1184,6 +1222,8 @@
     if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
       var s = unproj(p[0], p[1]), c = s && hit(s[0], s[1]);
       if (c) answer(c);
+    } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore' && !rec && !player.edit && starAt(p[0], p[1]) >= 0) {
+      showStar(starAt(p[0], p[1]), p[0], p[1]);
     } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore') {
       var s2 = unproj(p[0], p[1]), c2 = s2 && hit(s2[0], s2[1]);
       if (c2 && player.story) { if (player.edit) editToggle(c2.abbr); }
@@ -1204,6 +1244,7 @@
   function hover(p) {
     var s = unproj(p[0], p[1]), tip = $('tip');
     $('coord').textContent = s ? 'RA ' + fmtRA(s[0]) + '   Dec ' + fmtDec(s[1]) : '';
+    cv.style.cursor = st.mode === 'explore' && starAt(p[0], p[1]) >= 0 ? 'pointer' : '';
     if (st.mode !== 'explore' || !s) { tip.style.display = 'none'; return; }
     var c = hit(s[0], s[1]);
     if (!c) { tip.style.display = 'none'; return; }
