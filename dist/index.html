@@ -1309,8 +1309,7 @@
     // while placing, show the others as they look when the placed picture is fully in
     if (pa) t = Math.max(pa.t0 + ART_FADE, Math.min(pa.t1 - ART_FADE, t));
     player.story.art.forEach(function (a) {
-      var out = a.t1 >= player.story.duration - 0.05 ? 1 : (a.t1 - t) / ART_FADE;   // pictures lasting to the end stay in
-      var placing = player.place === a, al = placing ? 1 : Math.min(1, (t - a.t0) / ART_FADE, out);
+      var placing = player.place === a, al = placing ? 1 : Math.min(1, (t - a.t0) / ART_FADE, (a.t1 - t) / ART_FADE);
       if (al <= 0) return;
       var im = artImg(a.img); if (!im.naturalWidth) return;
       var w = im.naturalWidth, h = im.naturalHeight, G = ART_GRID, P = [];
