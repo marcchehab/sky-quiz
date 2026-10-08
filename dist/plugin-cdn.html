@@ -92,19 +92,30 @@
   #sel li b { font-style: normal; opacity: .5; margin-left: 6px; padding: 0 3px; }
   #sel li b:hover { opacity: 1; color: #f87171; }
   #sel button { font-size: 11px; padding: 1px 6px; background: #1b1e5e; color: #e8eaf6; border-color: #3a3f8f; }
-  #stories { position: absolute; left: 8px; top: 8px; max-height: calc(100% - 120px); overflow-y: auto;
-    background: rgba(8,9,40,.92); border: 1px solid #8c7a2e; border-radius: 8px; padding: 8px 10px;
-    color: #e8eaf6; font-size: 13px; display: none; width: min(360px, calc(100% - 16px)); z-index: 4; }
-  #stories .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #f2c94c; font-weight: bold; }
-  #stories .hd span { flex: 1; }
-  #stories ol { margin: 0; padding-left: 20px; }
-  #stories li { padding: 3px 0; }
-  #stories li .t { cursor: pointer; font-style: italic; }
-  #stories li .t:hover { color: #f2c94c; }
-  #stories li small { opacity: .6; }
-  #stories li .acts { float: right; }
-  #stories li .acts b { cursor: pointer; opacity: .6; margin-left: 6px; font-weight: normal; font-size: 12px; }
-  #stories li .acts b:hover { opacity: 1; color: #f2c94c; }
+  #storybox { position: absolute; left: 8px; top: 8px; max-height: calc(100% - 110px); overflow-y: auto;
+    background: rgba(8,9,40,.92); border: 1px solid #8c7a2e; border-radius: 10px; padding: 10px 12px;
+    color: #e8eaf6; font-size: 14px; display: none; width: min(330px, calc(100% - 16px)); z-index: 4; }
+  #storybox .item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 4px 0; border-radius: 7px;
+    border: 1px solid #2b3070; cursor: pointer; }
+  #storybox .item:hover { border-color: #f2c94c; }
+  #storybox .item .pl { width: 30px; height: 30px; border-radius: 50%; background: #f2c94c; color: #08093d; font-size: 13px;
+    display: flex; align-items: center; justify-content: center; flex: none; }
+  #storybox .item .t { flex: 1; font-style: italic; }
+  #storybox .item small { opacity: .7; white-space: nowrap; }
+  #storybox .item .sc { font-weight: bold; white-space: nowrap; }
+  #storybox .acts { display: block; font-size: 11px; }
+  #storybox .acts b { cursor: pointer; opacity: .6; margin-right: 8px; font-weight: normal; }
+  #storybox .acts b:hover { opacity: 1; color: #f2c94c; }
+  #storybox .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #f2c94c; font-weight: bold; }
+  #storybox .hd span { flex: 1; }
+  #storybox ol { margin: 0; padding-left: 20px; }
+  #storybox li { padding: 3px 0; }
+  #storybox li .t { cursor: pointer; font-style: italic; }
+  #storybox li .t:hover { color: #f2c94c; }
+  #storybox li small { opacity: .6; }
+  #storybox li .acts { float: right; }
+  #storybox li .acts b { cursor: pointer; opacity: .6; margin-left: 6px; font-weight: normal; font-size: 12px; }
+  #storybox li .acts b:hover { opacity: 1; color: #f2c94c; }
   .hint { font-size: 12px; opacity: .7; margin-top: 4px; }
   #player, #recbar { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
     width: min(680px, calc(100% - 16px)); background: rgba(8,9,40,.9); border: 1px solid #8c7a2e;
@@ -119,7 +130,7 @@
   #player .ticks i { position: absolute; width: 2px; height: 6px; background: #f2c94c; }
   #player .ticks i.on { background: #4ade80; }
   #pTime { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
-  #player button, #recbar button, #stories button { font-size: 12px; padding: 2px 8px; background: #1b1e5e;
+  #player button, #recbar button, #storybox button { font-size: 12px; padding: 2px 8px; background: #1b1e5e;
     color: #e8eaf6; border-color: #3a3f8f; }
   #pEdit { display: none; max-height: 170px; overflow-y: auto; font-size: 12px; margin-top: 6px;
     border-top: 1px solid #3a3f8f; padding-top: 6px; }
@@ -146,7 +157,7 @@
 <div id="sq" data-mode="explore">
   <div class="bar">
     <div class="seg" id="modes">
-      <button data-v="explore">Explore</button><button data-v="name">Name it</button><button data-v="find">Find it</button><button data-v="draw">Draw it</button>
+      <button data-v="stories">📖 Sky Stories</button><button data-v="explore">Explore freely</button><button data-v="name">Name it</button><button data-v="find">Find it</button><button data-v="draw">Draw it</button>
     </div>
     <select id="level" title="Which constellations are quizzed">
       <option value="0">My list</option><option value="1">Famous 22</option><option value="2">Common 46</option><option value="3">All 88</option>
@@ -159,7 +170,6 @@
       <button data-lang="en" title="English"><svg viewBox="0 0 60 30" width="24" height="12"><rect width="60" height="30" fill="#012169"/><path d="M0,0 60,30M60,0 0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 60,30M60,0 0,30" stroke="#C8102E" stroke-width="2"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></svg></button><button data-lang="de" title="Deutsch"><svg viewBox="0 0 32 32" width="14" height="14"><rect width="32" height="32" fill="#d52b1e"/><path d="M13 6h6v7h7v6h-7v7h-6v-7H6v-6h7z" fill="#fff"/></svg></button>
     </div>
     <button id="recenter" title="Centre on 0h RA, Dec 0°">♈ 0h/0°</button>
-    <button id="storiesBtn" title="Sky Stories: narrated walks through the sky">📖 Stories</button>
     <button id="layersBtn">Layers</button>
     <button id="fsBtn" title="Fullscreen">⛶</button>
   </div>
@@ -172,7 +182,7 @@
     <div id="layers"></div>
     <div id="sel"></div>
     <div id="starinfo"></div>
-    <div id="stories"></div>
+    <div id="storybox"></div>
     <div id="player"></div>
     <div id="recbar"></div>
     <input type="file" id="importFile" accept=".skystory,application/json" hidden>
@@ -487,7 +497,9 @@
       ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke();
     }
   }
-  function quizzing() { return st.mode !== 'explore' && !st.answered; }
+  function isQuiz(m) { return m === 'name' || m === 'find' || m === 'draw'; }
+  function freeMode() { return st.mode === 'explore' || st.mode === 'stories'; }
+  function quizzing() { return isQuiz(st.mode) && !st.answered; }
 
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -772,7 +784,12 @@
 
   function nextQ() {
     var ds = st.mode === 'draw' && st.drawSet;
-    if (ds && ds.i >= ds.list.length) { ds.done = true; st.target = null; renderQuiz(); req(); return; }
+    if (ds && ds.i >= ds.list.length) {
+      ds.done = true; st.target = null;
+      stats.stories = stats.stories || {};   // last score per story -> colour in the Sky Stories list
+      stats.stories[ds.story.id] = ds.res.reduce(function (x, y) { return x + y; }, 0) / ds.res.length;
+      save(); renderQuiz(); req(); return;
+    }
     st.target = ds ? CONS[ds.list[ds.i]] : pickTarget(); st.picked = null; st.answered = false; st.hinted = false;
     st.drawn = []; st.drawFrom = -1; st.result = null;
     if (st.mode === 'name' || st.mode === 'draw') {
@@ -814,7 +831,7 @@
         '<button data-act="setstory">▶ Story</button><button data-act="setfree">Free drawing</button></div>';
       return;
     }
-    if (st.mode === 'explore' || !st.target) { q.style.display = 'none'; return; }
+    if (!isQuiz(st.mode) || !st.target) { q.style.display = 'none'; return; }
     q.style.display = 'block';
     var t = st.target, html = '';
     if (st.mode === 'name') {
@@ -852,7 +869,7 @@
     q.innerHTML = html + '</div>';
   }
   function renderScore() {
-    if (st.mode === 'explore') { $('score').innerHTML = ''; return; }
+    if (!isQuiz(st.mode)) { $('score').innerHTML = ''; return; }
     var p = pool(), mastered = p.filter(function (a) { return cstat(a)[2] >= 3; }).length;
     $('score').innerHTML = '<b>' + st.score + '</b> pts' +
       (st.streak ? ' · 🔥 ' + st.streak + (st.streak >= 5 ? ' ×' + Math.min(4, 1 + Math.floor(st.streak / 5)) : '') : '') +
@@ -906,7 +923,7 @@
   function renderSel() {
     var el = $('sel'), n = st.sel.length;
     $('level').options[0].textContent = 'My list (' + n + ')';
-    if (st.mode !== 'explore' || !n || rec || player.story || $('stories').style.display === 'block') { el.style.display = 'none'; return; }
+    if (st.mode !== 'explore' || !n || rec || player.story) { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.innerHTML = '<div class="hd"><span>My list (' + n + ')</span><button data-act="clear">Clear</button></div><ol>' +
       st.sel.map(function (a) { return '<li data-a="' + a + '">' + esc(cname(CONS[a])) + '<b data-x="' + a + '" title="Remove">×</b></li>'; }).join('') + '</ol>';
@@ -974,8 +991,9 @@
       function (e) { storyMsg('Microphone not available: ' + e.message); });
   }
   function beginRec(title, stream, replace) {
-    closePlayer(); setMode('explore'); $('stories').style.display = 'none';
+    closePlayer(); setMode('stories');
     rec = { title: title, stream: stream, replace: replace || null, chunks: [], cues: [], t0: 0, keepSel: st.sel, mr: new MediaRecorder(stream) };
+    renderStories();
     var n = 3, r = rec;
     r.mr.ondataavailable = function (e) { if (e.data.size) r.chunks.push(e.data); };
     st.sel = []; renderSel(); req();
@@ -999,7 +1017,7 @@
     var r = rec; if (!r) return null;
     rec = null; clearInterval(r.cd); clearInterval(r.iv);
     $('recbar').style.display = 'none';
-    st.sel = r.keepSel; renderSel(); req();
+    st.sel = r.keepSel; renderSel(); renderStories(); req();
     return r;
   }
   function restartRec() {
@@ -1038,8 +1056,7 @@
   }
   function openPlayer(s) { repairAudio(s).then(openPlayer2); }
   function openPlayer2(s) {
-    closePlayer(); setMode('explore');
-    $('stories').style.display = 'none';
+    closePlayer(); if (st.mode !== 'stories') setMode('stories');
     player.story = s; player.url = URL.createObjectURL(s.audio);
     player.audio = new Audio(player.url);
     player.audio.onended = function () { renderCtl(); $('pSub').textContent = 'Now draw them from memory → ✏️ Draw them'; };
@@ -1092,8 +1109,9 @@
       '<span class="ttl">' + esc(s.title) + '</span><div class="seek"><div class="ticks" id="pTicks"></div>' +
       '<input type="range" id="pSeek" min="0" max="' + s.duration + '" step="0.05" value="0"></div>' +
       '<span id="pTime"></span><button data-act="drawthem" title="Draw this story\'s constellations from memory">✏️ Draw them</button>' +
-      '<button data-act="retake" title="Record this story again (replaces this take)">↺ Retake</button>' +
-      '<button data-act="edit" title="Fix cues and subtitles">✎</button><button data-act="close" title="Close">✕</button></div>' +
+      (AUTHOR && !s.published ? '<button data-act="retake" title="Record this story again (replaces this take)">↺ Retake</button>' +
+        '<button data-act="edit" title="Fix cues and subtitles">✎</button>' : '') +
+      '<button data-act="close" title="Close">✕</button></div>' +
       '<div id="pEdit"></div>';
     renderTicks(); updTime(); renderCtl();
     if (player.edit) renderEdit();
@@ -1181,36 +1199,58 @@
 
   // --- stories list, export/import, Whisper subtitles ---
   function storyMsg(m) { var e = $('stMsg'); if (e) e.textContent = m; else if (m) alert(m); }
+  // Recording/editing tools only for the author: the local file, or ?author in the URL. Visitors just play.
+  var AUTHOR = location.protocol === 'file:' || /[?&]author\b/.test(location.search);
+  var published = [];   // [{ id, title, duration, file }] from ../stories/index.json (published with the site)
   function loadStories() {
-    return dbAll().then(function (a) {
-      stories = (a || []).sort(function (x, y) { return x.created - y.created; }); renderStories();
-    });
+    var local = dbAll().then(function (a) {
+      stories = (a || []).sort(function (x, y) { return x.created - y.created; });
+    }, function () { stories = []; });
+    var pub = location.protocol === 'file:' ? Promise.resolve() :
+      fetch('../stories/index.json').then(function (r) { return r.ok ? r.json() : []; }).then(function (a) { published = a || []; }, function () {});
+    return Promise.all([local, pub]).then(renderStories);
   }
+  function allStories() {   // published first (course order), then own local ones; a local copy wins over the published one
+    var ids = {}, out = [];
+    stories.forEach(function (s) { ids[s.id] = 1; });
+    published.forEach(function (p) { if (!ids[p.id]) out.push(p); });
+    return out.map(function (p) { return { id: p.id, title: p.title, duration: p.duration, pub: p }; }).concat(stories);
+  }
+  function scoreBg(x) { return x == null ? '' : 'background:hsla(' + Math.round(120 * x) + ',70%,38%,.45)'; }
   function renderStories() {
-    var el = $('stories');
-    if (el.style.display !== 'block') return;
-    var keep = $('stMsg') ? $('stMsg').textContent : '';
-    el.innerHTML = '<div class="hd"><span>📖 Sky Stories</span><button data-act="rec">● Record</button><button data-act="import">Import</button><button data-act="x">✕</button></div>' +
-      (stories.length ? '<ol>' + stories.map(function (s) {
-        return '<li data-id="' + s.id + '"><span class="t" data-act="play">' + esc(s.title) + '</span> <small>' + fmtT(s.duration) +
-          (s.subs && s.subs.length ? ' · CC' : '') + '</small><span class="acts"><b data-act="subs" title="Subtitles with Whisper">CC</b>' +
-          '<b data-act="ren" title="Rename">✎</b><b data-act="exp" title="Export as file">⤓</b><b data-act="del" title="Delete">🗑</b></span></li>';
-      }).join('') + '</ol>' : '<div class="hint">No stories yet. Press ● Record, then tell your story while you click the constellations.</div>') +
+    var el = $('storybox');
+    if (st.mode !== 'stories' || rec) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    var keep = $('stMsg') ? $('stMsg').textContent : '', list = allStories(), sc = stats.stories || {};
+    el.innerHTML = '<div class="hd"><span>📖 Sky Stories</span>' +
+      (AUTHOR ? '<button data-act="rec">● Record</button><button data-act="import">Import</button>' : '') + '</div>' +
+      '<div class="hint" style="margin:0 0 6px">Listen to a story, then draw its constellations from memory.</div>' +
+      (list.length ? list.map(function (s) {
+        var x = sc[s.id];
+        return '<div class="item" data-id="' + s.id + '" data-act="play" style="' + scoreBg(x) + '"><span class="pl" data-act="play">▶</span>' +
+          '<span class="t" data-act="play">' + esc(s.title) + '<br><small data-act="play">' + fmtT(s.duration) + (s.subs && s.subs.length ? ' · CC' : '') + '</small>' +
+          (AUTHOR && !s.pub ? '<span class="acts"><b data-act="subs" title="Subtitles with Whisper">CC</b><b data-act="ren" title="Rename">✎</b>' +
+            '<b data-act="exp" title="Export as file (to publish: put it into stories/)">⤓</b><b data-act="del" title="Delete">🗑</b></span>' : '') +
+          '</span>' + (x != null ? '<span class="sc">' + Math.round(100 * x) + ' %</span>' : '') + '</div>';
+      }).join('') : '<div class="hint">' + (AUTHOR ? 'No stories yet. Press ● Record, then tell your story while you click the constellations.' : 'No stories published yet.') + '</div>') +
       '<div class="hint" id="stMsg">' + esc(keep) + '</div>';
   }
-  $('storiesBtn').addEventListener('click', function () {
-    var el = $('stories'), open = el.style.display !== 'block';
-    el.style.display = open ? 'block' : 'none';
-    renderSel();
-    if (open) loadStories().catch(function () { el.innerHTML = '<div class="hint">Stories need browser storage (IndexedDB), which is blocked here.</div>'; });
-  });
-  $('stories').addEventListener('click', function (e) {
+  function openAny(s) {   // published stories are fetched on demand
+    if (!s.pub) return openPlayer(s);
+    storyMsg('Loading “' + s.title + '” …');
+    fetch('../stories/' + s.pub.file).then(function (r) { return r.json(); }).then(function (o) {
+      return fetch(o.audio).then(function (r) { return r.blob(); }).then(function (blob) {
+        storyMsg('');
+        openPlayer({ id: o.id, title: o.title, created: o.created, duration: o.duration, audio: blob, cues: o.cues || [], subs: o.subs || [], published: true });
+      });
+    }).catch(function (e) { storyMsg('Could not load the story: ' + e.message); });
+  }
+  $('storybox').addEventListener('click', function (e) {
     var act = e.target.dataset.act; if (!act) return;
-    var li = e.target.closest('li'), s = li && stories.filter(function (x) { return x.id === li.dataset.id; })[0];
-    if (act === 'x') { $('stories').style.display = 'none'; renderSel(); releaseMic(); }
-    else if (act === 'rec') startRec();
+    var it = e.target.closest('.item'), s = it && allStories().filter(function (x) { return x.id === it.dataset.id; })[0];
+    if (act === 'rec') startRec();
     else if (act === 'import') $('importFile').click();
-    else if (act === 'play') openPlayer(s);
+    else if (act === 'play') openAny(s);
     else if (act === 'ren') { var t = prompt('New title', s.title); if (t) { s.title = t; dbPut(s).then(loadStories); } }
     else if (act === 'del') { if (confirm('Delete "' + s.title + '"?')) dbDel(s.id).then(loadStories); }
     else if (act === 'exp') exportStory(s);
@@ -1277,17 +1317,17 @@
   function setMode(m, keepSet) {
     if (!keepSet) st.drawSet = null;
     $('starinfo').style.display = 'none';
-    if (m !== 'explore') { closePlayer(); if (rec) stopRec(); }
+    if (m !== 'stories') { closePlayer(); if (rec) stopRec(); }
     st.mode = m; st.target = null; st.answered = false; st.streak = 0; st.score = 0;
     $('sq').dataset.mode = m; setSeg('modes', m);
     $('tip').style.display = 'none';
-    if (m !== 'explore') nextQ(); else { renderQuiz(); req(); }
-    renderScore(); renderSel();
+    if (isQuiz(m)) nextQ(); else { renderQuiz(); req(); }
+    renderScore(); renderSel(); renderStories();
   }
   function setProj(p) { st.proj = p; setSeg('projs', p); if (p === 'map') st.dec0 = Math.max(-60, Math.min(60, st.dec0)); if (W) clampS(); req(); }
   $('modes').addEventListener('click', function (e) { if (e.target.dataset.v) setMode(e.target.dataset.v); });
   $('projs').addEventListener('click', function (e) { if (e.target.dataset.v) setProj(e.target.dataset.v); });
-  $('level').addEventListener('change', function () { st.level = +this.value; save(); if (st.mode !== 'explore') { st.target = null; nextQ(); } renderScore(); });
+  $('level').addEventListener('change', function () { st.level = +this.value; save(); if (isQuiz(st.mode)) { st.target = null; nextQ(); } renderScore(); });
   function renderLang() { [].forEach.call($('langs').children, function (b) { b.classList.toggle('on', !!st.lang[b.dataset.lang]); }); }
   $('langs').addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b) return;
@@ -1354,12 +1394,12 @@
     } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
       var s = unproj(p[0], p[1]), c = s && hit(s[0], s[1]);
       if (c) answer(c);
-    } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore' && !rec && !player.edit && starAt(p[0], p[1]) >= 0) {
+    } else if (p && !moved && Object.keys(ptrs).length === 0 && freeMode() && !rec && !player.edit && starAt(p[0], p[1]) >= 0) {
       showStar(starAt(p[0], p[1]), p[0], p[1]);
-    } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore') {
+    } else if (p && !moved && Object.keys(ptrs).length === 0 && freeMode()) {
       var s2 = unproj(p[0], p[1]), c2 = s2 && hit(s2[0], s2[1]);
       if (c2 && player.story) { if (player.edit) editToggle(c2.abbr); }
-      else if (c2) toggleSel(c2.abbr);
+      else if (c2 && (rec || st.mode === 'explore')) toggleSel(c2.abbr);
     } else if (p && moved && rec) snap();
   }
   cv.addEventListener('pointerup', up);
@@ -1376,8 +1416,8 @@
   function hover(p) {
     var s = unproj(p[0], p[1]), tip = $('tip');
     $('coord').textContent = s ? 'RA ' + fmtRA(s[0]) + '   Dec ' + fmtDec(s[1]) : '';
-    cv.style.cursor = (st.mode === 'explore' || st.mode === 'draw') && starAt(p[0], p[1]) >= 0 ? 'pointer' : '';
-    if (st.mode !== 'explore' || !s) { tip.style.display = 'none'; return; }
+    cv.style.cursor = (freeMode() || st.mode === 'draw') && starAt(p[0], p[1]) >= 0 ? 'pointer' : '';
+    if (!freeMode() || !s) { tip.style.display = 'none'; return; }
     var c = hit(s[0], s[1]);
     if (!c) { tip.style.display = 'none'; return; }
     tip.innerHTML = '<i>' + esc(cname(c)) + '</i> · ' + c.abbr;
@@ -1402,13 +1442,17 @@
     if (cfg.level != null && cfg.level !== '') st.level = Math.max(0, Math.min(3, +cfg.level || 0));
     if (st.level === 0 && !st.sel.length) st.level = 1;
     if (cfg.lang) { var ls = String(cfg.lang).split(/[ ,]+/); st.lang = { en: ls.indexOf('en') >= 0, de: ls.indexOf('de') >= 0 }; if (!st.lang.de) st.lang.en = true; }
-    if (!document.body.classList.contains('standalone') || !window.indexedDB) $('storiesBtn').style.display = 'none';
+    // stories need the standalone page (Eduskript's iframe CSP blocks the audio for now)
+    var storiesOK = document.body.classList.contains('standalone');
+    if (!storiesOK) $('modes').querySelector('[data-v=stories]').style.display = 'none';
     renderLang();
     $('level').value = String(st.level);
     setProj(cfg.projection === 'sphere' ? 'sphere' : 'map');
     new ResizeObserver(resize).observe($('stage'));
     resize();
-    setMode(['name', 'find', 'draw'].indexOf(cfg.mode) >= 0 ? cfg.mode : 'explore');
+    var modes = ['explore', 'name', 'find', 'draw'].concat(storiesOK ? ['stories'] : []);
+    setMode(modes.indexOf(cfg.mode) >= 0 ? cfg.mode : storiesOK ? 'stories' : 'explore');
+    if (storiesOK) loadStories();
   }
   function applyTheme(t) { document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light'); }
 

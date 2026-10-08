@@ -96,3 +96,15 @@ page = ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
         + frag + "\n</body></html>\n")
 (ROOT / "dist" / "index.html").write_text(page)
 print(f"cdn plugin {len(cdn)/1024:.0f} KB, stars {len(stars)//4}, names {len(names)}, data {len(js)/1024:.0f} KB, plugin {len(frag)/1024:.0f} KB")
+
+# Published Sky Stories: every stories/*.skystory (exported from the page) is listed in stories/index.json,
+# in file-name order (prefix files with 01-, 02-, … for the course order).
+SD = ROOT / "stories"
+SD.mkdir(exist_ok=True)
+index = []
+for f in sorted(SD.glob("*.skystory")):
+    o = json.load(open(f))
+    index.append({"id": o["id"], "title": o["title"], "duration": o.get("duration", 0), "file": f.name})
+(SD / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1))
+print(f"stories: {len(index)} published")
+

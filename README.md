@@ -19,6 +19,11 @@ BSD 3-Clause licence (see `data/LICENSE-d3-celestial`).
 
 ## Sky Stories (standalone page)
 
+**Publishing a story for visitors:** export it with ⤓, put the `.skystory` file into `stories/`
+(prefix `01-`, `02-` … for the course order), run `python build.py` (writes `stories/index.json`),
+commit and push. The online page lists published stories in the default *Sky Stories* mode; recording
+tools are only shown in the local file or with `?author` in the URL.
+
 📖 Stories → ● Record: talk while you click constellations and move the sky; everything is replayed
 in sync. Stories are stored locally in the browser (IndexedDB); ⤓ exports a `.skystory` file
 (JSON + audio), Import reads it back. CC creates subtitles with Whisper (runs in the browser,
