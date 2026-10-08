@@ -793,9 +793,10 @@
   function beginRec(title, stream, replace) {
     closePlayer(); setMode('explore'); $('stories').style.display = 'none';
     rec = { title: title, stream: stream, replace: replace || null, chunks: [], cues: [], t0: 0, keepSel: st.sel, mr: new MediaRecorder(stream) };
-    rec.mr.ondataavailable = function (e) { if (e.data.size) rec.chunks.push(e.data); };
+    var n = 3, r = rec;
+    r.mr.ondataavailable = function (e) { if (e.data.size) r.chunks.push(e.data); };
     st.sel = []; renderSel(); req();
-    var n = 3, r = rec; renderRec(n);
+    renderRec(n);
     r.cd = setInterval(function () {
       if (rec !== r) return clearInterval(r.cd);
       if (--n > 0) return renderRec(n);
@@ -842,7 +843,18 @@
   });
 
   // --- playback (HTMLAudioElement; an Eduskript build would swap this for Web Audio, CSP blocks media-src) ---
-  function openPlayer(s) {
+  function repairAudio(s) {
+    if (!/webm/.test(s.audio.type)) return Promise.resolve(s);
+    return s.audio.arrayBuffer().then(function (buf) {
+      var u = new Uint8Array(buf), i = 0;
+      while (i < u.length - 3 && !(u[i] === 0x1A && u[i + 1] === 0x45 && u[i + 2] === 0xDF && u[i + 3] === 0xA3)) i++;
+      if (i === 0 || i >= u.length - 3) return s;
+      s.audio = s.audio.slice(i, u.length, s.audio.type);
+      return dbPut(s).then(function () { return s; });
+    });
+  }
+  function openPlayer(s) { repairAudio(s).then(openPlayer2); }
+  function openPlayer2(s) {
     closePlayer(); setMode('explore');
     $('stories').style.display = 'none';
     player.story = s; player.url = URL.createObjectURL(s.audio);
@@ -860,7 +872,8 @@
   function ptime() { return player.audio ? player.audio.currentTime : 0; }
   function playPlayer() {
     if (player.audio.ended || ptime() >= player.story.duration - 0.05) { player.audio.currentTime = 0; player.cue = -1; }
-    player.audio.play(); loop(); renderCtl();
+    player.audio.play().then(loop, function (e) { $('pSub').textContent = 'Cannot play this recording: ' + e.message; renderCtl(); });
+    renderCtl();
   }
   function pausePlayer() { if (player.audio) player.audio.pause(); cancelAnimationFrame(player.raf); renderCtl(); }
   function loop() {
