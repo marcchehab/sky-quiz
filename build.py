@@ -8,7 +8,7 @@ D = ROOT / "data"
 MAXMAG = 6.0
 MW_STEP = 3          # keep every n-th Milky Way vertex
 MW_LEVELS = 4
-VERSION = "v1.1.0"   # git tag the CDN plugin loads its data from
+VERSION = "v1.2.0"   # git tag the CDN plugin loads its data from
 
 # German names that differ from d3-celestial's (common usage)
 DE_FIX = {"Hyi": "Kleine Wasserschlange", "Phe": "Phönix", "Car": "Schiffskiel"}
@@ -28,7 +28,9 @@ for f in load("stars.6.json")["features"]:
     m = f["properties"]["mag"]
     if m > MAXMAG: continue
     lon, lat = f["geometry"]["coordinates"]
-    stars += [ra(lon), r2(lat), round(m, 1)]
+    try: bv = round(float(f["properties"].get("bv") or 0.6), 2)
+    except ValueError: bv = 0.6
+    stars += [ra(lon), r2(lat), round(m, 1), bv]   # 4 values per star
     idx[str(f["id"])] = (ra(lon), r2(lat), m)
 
 names = []
@@ -88,4 +90,4 @@ page = ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<title>Constellation Trainer</title></head>\n<body class=\"standalone\">\n"
         + frag + "\n</body></html>\n")
 (ROOT / "dist" / "index.html").write_text(page)
-print(f"cdn plugin {len(cdn)/1024:.0f} KB, stars {len(stars)//3}, names {len(names)}, data {len(js)/1024:.0f} KB, plugin {len(frag)/1024:.0f} KB")
+print(f"cdn plugin {len(cdn)/1024:.0f} KB, stars {len(stars)//4}, names {len(names)}, data {len(js)/1024:.0f} KB, plugin {len(frag)/1024:.0f} KB")

@@ -174,7 +174,7 @@
   <div class="credit">Drag to rotate · scroll or pinch to zoom · click to add to your list · data: <a href="https://github.com/ofrohn/d3-celestial" target="_blank" rel="noopener">d3-celestial</a> (Yale BSC, IAU boundaries)</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/gh/marcchehab/sky-quiz@v1.1.0/dist/sky-data.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/marcchehab/sky-quiz@v1.2.0/dist/sky-data.js"></script>
 <script>
 (function () {
   var SKY = window.SKY_DATA;
@@ -191,7 +191,7 @@
   // ---------- state ----------
   var st = {
     mode: 'explore', level: 1, proj: 'map', ra0: 0, dec0: 0, S: 0,
-    layers: { lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
+    layers: { real: false, lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
     target: null, picked: null, answered: false, hinted: false, opts: null,
     score: 0, streak: 0, lang: { en: true, de: false }, sel: []   // sel: constellation abbrs in the order they were picked
   };
@@ -235,6 +235,18 @@
     out.push(f[f.length - 2], f[f.length - 1]);
     return out;
   }
+
+  // star colour from the B-V index, interpolated in a blackbody colour table
+  var BV = [[-0.4, 155, 178, 255], [-0.2, 170, 191, 255], [0, 202, 215, 255], [0.3, 248, 247, 255], [0.6, 255, 244, 234],
+    [0.9, 255, 228, 196], [1.2, 255, 210, 161], [1.6, 255, 190, 120], [2.0, 255, 170, 90]];
+  function bvRGB(bv) {
+    for (var i = 1; i < BV.length; i++) if (bv <= BV[i][0] || i === BV.length - 1) {
+      var a = BV[i - 1], b = BV[i], t = Math.max(0, Math.min(1, (bv - a[0]) / (b[0] - a[0])));
+      return [0, 1, 2].map(function (k) { return Math.round(a[k + 1] + (b[k + 1] - a[k + 1]) * t); }).join(',');
+    }
+  }
+  var SCOL = [];
+  for (var si = 0; si < SKY.s.length; si += 4) SCOL.push(bvRGB(SKY.s[si + 3]));
 
   var CONS = {}, ABBR = [];
   Object.keys(SKY.c).forEach(function (a) {
@@ -330,7 +342,7 @@
     var da = (ra - st.ra0) * D, d = dec * D, d0 = st.dec0 * D;
     var sd = Math.sin(d), cd = Math.cos(d), sd0 = Math.sin(d0), cd0 = Math.cos(d0), cda = Math.cos(da);
     var cosc = sd0 * sd + cd0 * cd * cda;
-    if (cosc < (far ? -0.995 : -0.5)) return null;
+    if (cosc < (far === 'fill' ? -0.2 : far ? -0.995 : -0.5)) return null;
     var k = 2 / (1 + cosc);
     return [cx - st.S * k * cd * Math.sin(da), cy - st.S * k * (cd0 * sd - sd0 * cd * cda)];
   }
@@ -378,9 +390,11 @@
       }
       return true;
     }
+    // a ring reaching far behind the viewer would project around the antipode and fill the
+    // whole screen inverted, so such fills are skipped (the outline is still drawn)
     var q = [];
     for (var n = 0; n < f.length; n += 2) {
-      var p = proj(f[n], f[n + 1], true);
+      var p = proj(f[n], f[n + 1], 'fill');
       if (!p) return false;
       q.push(p);
     }
@@ -501,10 +515,11 @@
     ctx.strokeStyle = COL.equ; ctx.lineWidth = 2.2; ctx.stroke();
     drawAxisLabels();
 
-    if (L.stars) {
+    if (L.stars && L.real) drawRealStars(zoom);
+    else if (L.stars) {
       ctx.fillStyle = COL.star;
       var s = SKY.s;
-      for (var i = 0; i < s.length; i += 3) {
+      for (var i = 0; i < s.length; i += 4) {
         var p = proj(s[i], s[i + 1]);
         if (!p || p[0] < -5 || p[1] < -5 || p[0] > W + 5 || p[1] > H + 5) continue;
         var r = Math.max(0.45, 0.55 + 0.42 * (6 - s[i + 2])) * zoom;
@@ -546,6 +561,26 @@
           label(c.de, p[0], p[1] + 8, (hi ? 'bold 13px' : '11px') + ' "DejaVu Sans", Verdana, sans-serif', hi ? col : '#aab1d6');
         } else label(st.lang.de ? c.de : c.name, p[0], p[1], st.lang.de ? f1.replace('italic ', '') : f1, col);
       });
+    }
+  }
+
+  // realistic stars: all are points; magnitude sets brightness (not size), B-V sets colour,
+  // the brightest get a soft glow like on a photo or to the eye
+  function drawRealStars(zoom) {
+    var s = SKY.s;
+    for (var i = 0, n = 0; i < s.length; i += 4, n++) {
+      var p = proj(s[i], s[i + 1]);
+      if (!p || p[0] < -20 || p[1] < -20 || p[0] > W + 20 || p[1] > H + 20) continue;
+      var m = s[i + 2], c = SCOL[n];
+      var a = Math.max(0.28, Math.pow(Math.max(0, Math.min(1, (7 - m) / 4.5)), 1.1));
+      var r = (0.8 + 0.4 * Math.max(0, 3.5 - m)) * zoom;
+      if (m < 3) {
+        var g = (4 + (3 - m) * 4) * zoom, gr = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], g);
+        gr.addColorStop(0, 'rgba(' + c + ',.7)'); gr.addColorStop(0.3, 'rgba(' + c + ',.2)'); gr.addColorStop(1, 'rgba(' + c + ',0)');
+        ctx.fillStyle = gr; ctx.fillRect(p[0] - g, p[1] - g, 2 * g, 2 * g);
+      }
+      ctx.fillStyle = 'rgba(' + c + ',' + a.toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 7); ctx.fill();
     }
   }
 
@@ -1097,10 +1132,10 @@
   });
   $('recenter').addEventListener('click', function () { flyTo(0, 0, defaultScale()); });
 
-  var LAYERS = [['lines', 'Constellation lines'], ['bounds', 'Boundaries'], ['names', 'Names'], ['stars', 'Stars'],
+  var LAYERS = [['real', 'Realistic stars (brightness + colour)'], ['lines', 'Constellation lines'], ['bounds', 'Boundaries'], ['names', 'Names'], ['stars', 'Stars'],
     ['messier', 'Messier objects'], ['grid', 'RA/Dec grid'], ['mw', 'Milky Way'], ['ecl', 'Ecliptic + months'], ['gal', 'Galactic equator']];
   $('layers').innerHTML = LAYERS.map(function (l) {
-    return '<label><input type="checkbox" data-l="' + l[0] + '" checked> ' + l[1] + '</label>';
+    return '<label><input type="checkbox" data-l="' + l[0] + '"' + (st.layers[l[0]] ? ' checked' : '') + '> ' + l[1] + '</label>';
   }).join('');
   $('layers').addEventListener('change', function (e) { st.layers[e.target.dataset.l] = e.target.checked; req(); });
   $('layersBtn').addEventListener('click', function () { var l = $('layers'); l.style.display = l.style.display === 'block' ? 'none' : 'block'; });
