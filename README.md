@@ -16,3 +16,10 @@ Build: `python build.py` (reads `src/plugin.html` and `data/`).
 Stars (Yale Bright Star Catalogue, to mag 6), constellation lines, IAU boundaries and Milky Way
 outlines from [d3-celestial](https://github.com/ofrohn/d3-celestial) by Olaf Frohn,
 BSD 3-Clause licence (see `data/LICENSE-d3-celestial`).
+
+## Sky Stories (standalone page)
+
+📖 Stories → ● Record: talk while you click constellations and move the sky; everything is replayed
+in sync. Stories are stored locally in the browser (IndexedDB); ⤓ exports a `.skystory` file
+(JSON + audio), Import reads it back. CC creates subtitles with Whisper (runs in the browser,
+model downloaded once). ✎ in the player shifts/deletes cues and fixes subtitle text.

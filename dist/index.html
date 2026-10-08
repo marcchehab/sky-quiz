@@ -94,6 +94,45 @@
   #sel li b { font-style: normal; opacity: .5; margin-left: 6px; padding: 0 3px; }
   #sel li b:hover { opacity: 1; color: #f87171; }
   #sel button { font-size: 11px; padding: 1px 6px; background: #1b1e5e; color: #e8eaf6; border-color: #3a3f8f; }
+  #stories { position: absolute; left: 8px; top: 8px; max-height: calc(100% - 120px); overflow-y: auto;
+    background: rgba(8,9,40,.92); border: 1px solid #8c7a2e; border-radius: 8px; padding: 8px 10px;
+    color: #e8eaf6; font-size: 13px; display: none; width: min(360px, calc(100% - 16px)); z-index: 4; }
+  #stories .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #f2c94c; font-weight: bold; }
+  #stories .hd span { flex: 1; }
+  #stories ol { margin: 0; padding-left: 20px; }
+  #stories li { padding: 3px 0; }
+  #stories li .t { cursor: pointer; font-style: italic; }
+  #stories li .t:hover { color: #f2c94c; }
+  #stories li small { opacity: .6; }
+  #stories li .acts { float: right; }
+  #stories li .acts b { cursor: pointer; opacity: .6; margin-left: 6px; font-weight: normal; font-size: 12px; }
+  #stories li .acts b:hover { opacity: 1; color: #f2c94c; }
+  .hint { font-size: 12px; opacity: .7; margin-top: 4px; }
+  #player, #recbar { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    width: min(680px, calc(100% - 16px)); background: rgba(8,9,40,.9); border: 1px solid #8c7a2e;
+    border-radius: 10px; padding: 8px 12px; color: #e8eaf6; display: none; z-index: 3; }
+  #player .sub { min-height: 1.5em; font-size: 17px; text-align: center; margin-bottom: 6px; }
+  .ctl { display: flex; align-items: center; gap: 8px; }
+  .ctl .sp { flex: 1; }
+  #player .ttl { font-style: italic; color: #f2c94c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30%; }
+  #player .seek { position: relative; flex: 1; }
+  #player .seek input { width: 100%; display: block; }
+  #player .ticks { position: absolute; left: 8px; right: 8px; top: -5px; height: 6px; pointer-events: none; }
+  #player .ticks i { position: absolute; width: 2px; height: 6px; background: #f2c94c; }
+  #player .ticks i.on { background: #4ade80; }
+  #pTime { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+  #player button, #recbar button, #stories button { font-size: 12px; padding: 2px 8px; background: #1b1e5e;
+    color: #e8eaf6; border-color: #3a3f8f; }
+  #pEdit { display: none; max-height: 170px; overflow-y: auto; font-size: 12px; margin-top: 6px;
+    border-top: 1px solid #3a3f8f; padding-top: 6px; }
+  #pEdit .cue { display: flex; gap: 6px; align-items: center; padding: 1px 0; }
+  #pEdit .cue.on { color: #4ade80; }
+  #pEdit .cue i { flex: 1; }
+  #pEdit .sl { display: flex; gap: 6px; }
+  #pEdit .sl [contenteditable] { flex: 1; outline: none; border-bottom: 1px dotted #3a3f8f; }
+  #recbar .big { font-size: 42px; text-align: center; color: #f87171; line-height: 1.1; }
+  #recbar .dot { color: #f87171; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
   #langs button { display: inline-flex; align-items: center; padding: 4px 8px; }
   #langs button svg { display: block; border-radius: 2px; }
   #langs button:not(.on) svg { opacity: .35; filter: grayscale(1); }
@@ -118,6 +157,7 @@
       <button data-lang="en" title="English"><svg viewBox="0 0 60 30" width="24" height="12"><rect width="60" height="30" fill="#012169"/><path d="M0,0 60,30M60,0 0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 60,30M60,0 0,30" stroke="#C8102E" stroke-width="2"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></svg></button><button data-lang="de" title="Deutsch"><svg viewBox="0 0 32 32" width="14" height="14"><rect width="32" height="32" fill="#d52b1e"/><path d="M13 6h6v7h7v6h-7v7h-6v-7H6v-6h7z" fill="#fff"/></svg></button>
     </div>
     <button id="recenter" title="Centre on 0h RA, Dec 0°">♈ 0h/0°</button>
+    <button id="storiesBtn" title="Sky Stories: narrated walks through the sky">📖 Stories</button>
     <button id="layersBtn">Layers</button>
     <button id="fsBtn" title="Fullscreen">⛶</button>
   </div>
@@ -129,6 +169,10 @@
     <div id="quiz"></div>
     <div id="layers"></div>
     <div id="sel"></div>
+    <div id="stories"></div>
+    <div id="player"></div>
+    <div id="recbar"></div>
+    <input type="file" id="importFile" accept=".skystory,application/json" hidden>
   </div>
   <div class="credit">Drag to rotate · scroll or pinch to zoom · click to add to your list · data: <a href="https://github.com/ofrohn/d3-celestial" target="_blank" rel="noopener">d3-celestial</a> (Yale BSC, IAU boundaries)</div>
 </div>
@@ -414,8 +458,11 @@
       ABBR.forEach(function (a) { CONS[a].polys.forEach(function (p) { strokeFlat(p.concat(p.slice(0, 2))); }); });
       ctx.strokeStyle = COL.bound; ctx.lineWidth = 0.9; ctx.stroke();
     }
+    // story playback / recording: the active constellations are highlighted like a quiz target
+    var act = player.story ? player.active : (rec ? st.sel : null);
+    if (act) act.forEach(function (a) { fillCons(CONS[a], COL.target, COL.targetEdge); });
     // own list: light tint so stars and lines stay readable
-    if (st.mode === 'explore') st.sel.forEach(function (a) { fillCons(CONS[a], 'rgba(242,201,76,.13)'); });
+    else if (st.mode === 'explore') st.sel.forEach(function (a) { fillCons(CONS[a], 'rgba(242,201,76,.13)'); });
     // quiz highlights
     if (st.target && st.mode === 'name') fillCons(st.target, COL.target, COL.targetEdge);
     if (st.target && st.mode === 'find' && st.answered) {
@@ -424,8 +471,14 @@
     }
     if (L.lines) {
       ctx.beginPath();
-      ABBR.forEach(function (a) { if (!(st.target === CONS[a] && st.mode === 'name')) CONS[a].lines.forEach(strokeFlat); });
+      ABBR.forEach(function (a) {
+        if (!(st.target === CONS[a] && st.mode === 'name') && !(act && act.indexOf(a) >= 0)) CONS[a].lines.forEach(strokeFlat);
+      });
       ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.stroke();
+    }
+    if (act && act.length) {
+      ctx.beginPath(); act.forEach(function (a) { CONS[a].lines.forEach(strokeFlat); });
+      ctx.strokeStyle = COL.lineHi; ctx.lineWidth = 2; ctx.stroke();
     }
     if (st.target && st.mode === 'name') {
       ctx.beginPath(); st.target.lines.forEach(strokeFlat);
@@ -485,8 +538,10 @@
     }
     if (showNames) {
       ABBR.forEach(function (a) {
-        var c = CONS[a], p = proj(c.lra, c.ldec); if (!p) return;
-        var hi = st.target === c, col = hi ? COL.targetEdge : COL.name;
+        var c = CONS[a], on = act && act.indexOf(a) >= 0;
+        if (player.story && !on) return;   // during playback only the story's constellations are named
+        var p = proj(c.lra, c.ldec); if (!p) return;
+        var hi = st.target === c || on, col = hi ? COL.targetEdge : COL.name;
         var f1 = (hi ? 'italic bold 15px' : 'italic 13px') + ' "DejaVu Sans", Verdana, sans-serif';
         if (st.lang.en && st.lang.de && c.de !== c.name) {
           label(c.name, p[0], p[1] - 7, f1, col);
@@ -530,6 +585,7 @@
       st.ra0 = norm360(a0 + da * e); st.dec0 = d0 + dd * e; st.S = s0 + (S - s0) * e;
       draw();
       if (t < 1) anim = requestAnimationFrame(step);
+      else if (rec) snap();
     })(t0);
   }
   function fitScale(c) {
@@ -663,12 +719,13 @@
   function toggleSel(a) {
     var i = st.sel.indexOf(a);
     if (i >= 0) st.sel.splice(i, 1); else st.sel.push(a);
-    save(); renderSel(); req();
+    if (rec) snap(); else save();
+    renderSel(); req();
   }
   function renderSel() {
     var el = $('sel'), n = st.sel.length;
     $('level').options[0].textContent = 'My list (' + n + ')';
-    if (st.mode !== 'explore' || !n) { el.style.display = 'none'; return; }
+    if (st.mode !== 'explore' || !n || rec || player.story || $('stories').style.display === 'block') { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.innerHTML = '<div class="hd"><span>My list (' + n + ')</span><button data-act="clear">Clear</button></div><ol>' +
       st.sel.map(function (a) { return '<li data-a="' + a + '">' + esc(cname(CONS[a])) + '<b data-x="' + a + '" title="Remove">×</b></li>'; }).join('') + '</ol>';
@@ -680,9 +737,311 @@
     else if (t.dataset.a) flyTo(CONS[t.dataset.a].lra, CONS[t.dataset.a].ldec);
   });
 
+  // ---------- sky stories: record narration + constellation cues, play back (local, IndexedDB) ----------
+  // story = { id, title, created, duration, audio: Blob, cues: [{ t, sel: [abbr], view }], subs: [{ t0, t1, text }] }
+  // Cues are full snapshots, so the state at time t is simply the last cue with cue.t <= t.
+  var DB = null, stories = [], rec = null;
+  var player = { story: null, audio: null, url: null, active: [], cue: -1, raf: 0, edit: false };
+  function db() {
+    return DB || (DB = new Promise(function (res, rej) {
+      var r = indexedDB.open('sky-stories', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('stories', { keyPath: 'id' }); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    }));
+  }
+  function dbReq(mode, fn) {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction('stories', mode), q = fn(tx.objectStore('stories'));
+        tx.oncomplete = function () { res(q.result); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  function dbAll() { return dbReq('readonly', function (s) { return s.getAll(); }); }
+  function dbPut(x) { return dbReq('readwrite', function (s) { return s.put(x); }); }
+  function dbDel(id) { return dbReq('readwrite', function (s) { return s.delete(id); }); }
+
+  function fmtT(t) { t = Math.max(0, t || 0); return Math.floor(t / 60) + ':' + ('0' + Math.floor(t % 60)).slice(-2); }
+  // view as field of view (not px/rad) so a story plays the same on any screen size
+  function viewNow() { return { proj: st.proj, ra0: +st.ra0.toFixed(2), dec0: +st.dec0.toFixed(2), fov: +(W / st.S).toFixed(4) }; }
+  function applyView(v) { if (v.proj !== st.proj) setProj(v.proj); flyTo(v.ra0, v.dec0, W / v.fov); }
+
+  // --- recording ---
+  function snap() {
+    if (!rec || !rec.t0) return;
+    var t = +((performance.now() - rec.t0) / 1000).toFixed(2), last = rec.cues[rec.cues.length - 1];
+    var c = { t: t, sel: st.sel.slice(), view: viewNow() };
+    if (last && t - last.t < 0.3 && last.sel.join() === c.sel.join()) { last.view = c.view; return; }
+    rec.cues.push(c);
+  }
+  function startRec() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) { storyMsg('Recording needs microphone access (open the page via https or as a local file).'); return; }
+    var title = prompt('Title of the story', 'Little Ursa and her dragon');
+    if (!title) return;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) { beginRec(title, stream); },
+      function (e) { storyMsg('Microphone not available: ' + e.message); });
+  }
+  function beginRec(title, stream) {
+    closePlayer(); setMode('explore'); $('stories').style.display = 'none';
+    rec = { title: title, stream: stream, chunks: [], cues: [], t0: 0, keepSel: st.sel, mr: new MediaRecorder(stream) };
+    rec.mr.ondataavailable = function (e) { if (e.data.size) rec.chunks.push(e.data); };
+    st.sel = []; renderSel(); req();
+    var n = 3, r = rec; renderRec(n);
+    r.cd = setInterval(function () {
+      if (rec !== r) return clearInterval(r.cd);
+      if (--n > 0) return renderRec(n);
+      clearInterval(r.cd);
+      r.mr.start(250); r.t0 = performance.now(); snap(); renderRec();
+      r.iv = setInterval(function () { var e = $('recTime'); if (e) e.textContent = fmtT((performance.now() - r.t0) / 1000); }, 250);
+    }, 800);
+  }
+  function renderRec(count) {
+    var b = $('recbar'); b.style.display = 'block';
+    b.innerHTML = count
+      ? '<div class="big">' + count + '</div><div class="hint" style="text-align:center">Talk, click constellations, rotate and zoom – it all gets recorded.</div>'
+      : '<div class="ctl"><span class="dot">●</span><b>REC</b><span id="recTime">0:00</span><i class="ttl">' + esc(rec.title) +
+        '</i><span class="sp"></span><button data-act="stop">■ Stop</button></div><div class="hint">Click a constellation to light it up, click again to switch it off.</div>';
+  }
+  function stopRec() {
+    var r = rec; if (!r) return;
+    rec = null; clearInterval(r.cd); clearInterval(r.iv);
+    $('recbar').style.display = 'none';
+    st.sel = r.keepSel; renderSel(); req();
+    var dur = r.t0 ? +((performance.now() - r.t0) / 1000).toFixed(2) : 0;
+    r.mr.onstop = function () {
+      r.stream.getTracks().forEach(function (t) { t.stop(); });
+      if (!r.t0) return;   // cancelled during the countdown
+      var s = { id: 's' + Date.now(), title: r.title, created: Date.now(), duration: dur,
+        audio: new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }), cues: r.cues, subs: [] };
+      dbPut(s).then(loadStories).then(function () { openPlayer(s); });
+    };
+    if (r.mr.state !== 'inactive') r.mr.stop(); else r.mr.onstop();
+  }
+  $('recbar').addEventListener('click', function (e) { if (e.target.dataset.act === 'stop') stopRec(); });
+
+  // --- playback (HTMLAudioElement; an Eduskript build would swap this for Web Audio, CSP blocks media-src) ---
+  function openPlayer(s) {
+    closePlayer(); setMode('explore');
+    $('stories').style.display = 'none';
+    player.story = s; player.url = URL.createObjectURL(s.audio);
+    player.audio = new Audio(player.url);
+    player.audio.onended = function () { renderCtl(); };
+    player.active = []; player.cue = -1; player.edit = false;
+    renderPlayer(); applyAt(0); renderSel(); req();
+  }
+  function closePlayer() {
+    if (!player.story) return;
+    pausePlayer(); URL.revokeObjectURL(player.url);
+    player.story = null; player.audio = null; player.active = [];
+    $('player').style.display = 'none'; renderSel(); req();
+  }
+  function ptime() { return player.audio ? player.audio.currentTime : 0; }
+  function playPlayer() {
+    if (player.audio.ended || ptime() >= player.story.duration - 0.05) { player.audio.currentTime = 0; player.cue = -1; }
+    player.audio.play(); loop(); renderCtl();
+  }
+  function pausePlayer() { if (player.audio) player.audio.pause(); cancelAnimationFrame(player.raf); renderCtl(); }
+  function loop() {
+    cancelAnimationFrame(player.raf);
+    (function f() {
+      if (!player.audio) return;
+      applyAt(ptime()); updTime();
+      if (!player.audio.paused) player.raf = requestAnimationFrame(f); else renderCtl();
+    })();
+  }
+  function cueAt(t) { var c = player.story.cues, i = -1; for (var k = 0; k < c.length; k++) if (c[k].t <= t + 1e-3) i = k; return i; }
+  function applyAt(t, force) {
+    var i = cueAt(t);
+    if (i === player.cue && !force) return;
+    player.cue = i;
+    var c = player.story.cues[i];
+    player.active = c ? c.sel.slice() : [];
+    if (c && c.view) applyView(c.view);
+    req(); markCue();
+  }
+  function updTime() {
+    var t = ptime(), s = player.story, sub = '';
+    $('pTime').textContent = fmtT(t) + ' / ' + fmtT(s.duration);
+    if (!seeking) $('pSeek').value = t;
+    (s.subs || []).forEach(function (x) { if (x.t0 <= t && t < x.t1) sub = x.text; });
+    $('pSub').textContent = sub;
+  }
+  function renderCtl() { var b = $('pPP'); if (b) b.textContent = player.audio && !player.audio.paused ? '❚❚' : '▶'; }
+  function renderPlayer() {
+    var s = player.story, el = $('player');
+    el.style.display = 'block';
+    el.innerHTML = '<div class="sub" id="pSub"></div><div class="ctl"><button id="pPP" data-act="pp">▶</button>' +
+      '<span class="ttl">' + esc(s.title) + '</span><div class="seek"><div class="ticks" id="pTicks"></div>' +
+      '<input type="range" id="pSeek" min="0" max="' + s.duration + '" step="0.05" value="0"></div>' +
+      '<span id="pTime"></span><button data-act="edit" title="Fix cues and subtitles">✎</button><button data-act="close" title="Close">✕</button></div>' +
+      '<div id="pEdit"></div>';
+    renderTicks(); updTime(); renderCtl();
+    if (player.edit) renderEdit();
+  }
+  function renderTicks() {
+    var s = player.story;
+    $('pTicks').innerHTML = s.cues.map(function (c, i) {
+      return '<i data-i="' + i + '" style="left:' + (100 * c.t / Math.max(s.duration, 0.1)) + '%"></i>';
+    }).join('');
+    markCue();
+  }
+  function markCue() {
+    [].forEach.call(document.querySelectorAll('#pTicks i, #pEdit .cue'), function (e) { e.classList.toggle('on', +e.dataset.i === player.cue); });
+  }
+  var seeking = false;
+  $('player').addEventListener('input', function (e) {
+    if (e.target.id !== 'pSeek') return;
+    seeking = true; player.audio.currentTime = +e.target.value; applyAt(+e.target.value); updTime();
+  });
+  $('player').addEventListener('change', function (e) { if (e.target.id === 'pSeek') seeking = false; });
+
+  // --- fix-up editor: shift/delete cues, toggle constellations at the playhead, correct subtitles ---
+  function cname3(a) { return CONS[a] ? cname(CONS[a]) : a; }
+  function renderEdit() {
+    var s = player.story, el = $('pEdit');
+    el.style.display = player.edit ? 'block' : 'none';
+    if (!player.edit) return;
+    el.innerHTML = '<div class="hint" style="margin:0 0 4px">Click constellations on the map to switch them on/off at the playhead.</div>' +
+      s.cues.map(function (c, i) {
+        return '<div class="cue" data-i="' + i + '"><span>' + c.t.toFixed(1) + ' s</span><i>' +
+          (c.sel.length ? c.sel.map(function (a) { return esc(cname3(a)); }).join(', ') : '—') + '</i>' +
+          '<button data-act="nudge" data-d="-0.5">−½ s</button><button data-act="nudge" data-d="0.5">+½ s</button>' +
+          '<button data-act="go">▶</button><button data-act="delcue">×</button></div>';
+      }).join('') +
+      '<div class="ctl" style="margin:4px 0"><button data-act="addcue">+ cue with current view at playhead</button></div>' +
+      (s.subs && s.subs.length ? s.subs.map(function (x, i) {
+        return '<div class="sl"><span>' + fmtT(x.t0) + '</span><span contenteditable="true" data-si="' + i + '">' + esc(x.text) + '</span></div>';
+      }).join('') : '<div class="hint">No subtitles yet – use CC in the Stories list.</div>');
+    markCue();
+  }
+  function saveStory() { player.story.cues.sort(function (a, b) { return a.t - b.t; }); return dbPut(player.story); }
+  function cueAtPlayhead() {
+    var s = player.story, t = +ptime().toFixed(2), i = cueAt(t), c = s.cues[i];
+    if (c && Math.abs(c.t - t) < 0.25) return c;
+    c = { t: t, sel: player.active.slice(), view: viewNow() };
+    s.cues.push(c); return c;
+  }
+  function editToggle(a) {
+    var c = cueAtPlayhead(), i = c.sel.indexOf(a);
+    if (i >= 0) c.sel.splice(i, 1); else c.sel.push(a);
+    saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit();
+  }
+  $('player').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var act = b.dataset.act, row = b.closest('.cue'), s = player.story, i = row ? +row.dataset.i : -1;
+    if (act === 'pp') { if (player.audio.paused) playPlayer(); else pausePlayer(); }
+    else if (act === 'close') closePlayer();
+    else if (act === 'edit') { player.edit = !player.edit; renderEdit(); }
+    else if (act === 'nudge') { s.cues[i].t = Math.max(0, +(s.cues[i].t + +b.dataset.d).toFixed(2)); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
+    else if (act === 'delcue') { s.cues.splice(i, 1); saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit(); }
+    else if (act === 'go') { pausePlayer(); player.audio.currentTime = s.cues[i].t; player.cue = -1; applyAt(s.cues[i].t); updTime(); }
+    else if (act === 'addcue') { var c = cueAtPlayhead(); c.view = viewNow(); c.sel = player.active.slice(); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
+  });
+  $('player').addEventListener('focusout', function (e) {
+    var i = e.target.dataset && e.target.dataset.si;
+    if (i == null) return;
+    player.story.subs[+i].text = e.target.textContent.trim(); saveStory();
+  });
+
+  // --- stories list, export/import, Whisper subtitles ---
+  function storyMsg(m) { var e = $('stMsg'); if (e) e.textContent = m; else if (m) alert(m); }
+  function loadStories() {
+    return dbAll().then(function (a) {
+      stories = (a || []).sort(function (x, y) { return x.created - y.created; }); renderStories();
+    });
+  }
+  function renderStories() {
+    var el = $('stories');
+    if (el.style.display !== 'block') return;
+    var keep = $('stMsg') ? $('stMsg').textContent : '';
+    el.innerHTML = '<div class="hd"><span>📖 Sky Stories</span><button data-act="rec">● Record</button><button data-act="import">Import</button><button data-act="x">✕</button></div>' +
+      (stories.length ? '<ol>' + stories.map(function (s) {
+        return '<li data-id="' + s.id + '"><span class="t" data-act="play">' + esc(s.title) + '</span> <small>' + fmtT(s.duration) +
+          (s.subs && s.subs.length ? ' · CC' : '') + '</small><span class="acts"><b data-act="subs" title="Subtitles with Whisper">CC</b>' +
+          '<b data-act="ren" title="Rename">✎</b><b data-act="exp" title="Export as file">⤓</b><b data-act="del" title="Delete">🗑</b></span></li>';
+      }).join('') + '</ol>' : '<div class="hint">No stories yet. Press ● Record, then tell your story while you click the constellations.</div>') +
+      '<div class="hint" id="stMsg">' + esc(keep) + '</div>';
+  }
+  $('storiesBtn').addEventListener('click', function () {
+    var el = $('stories'), open = el.style.display !== 'block';
+    el.style.display = open ? 'block' : 'none';
+    renderSel();
+    if (open) loadStories().catch(function () { el.innerHTML = '<div class="hint">Stories need browser storage (IndexedDB), which is blocked here.</div>'; });
+  });
+  $('stories').addEventListener('click', function (e) {
+    var act = e.target.dataset.act; if (!act) return;
+    var li = e.target.closest('li'), s = li && stories.filter(function (x) { return x.id === li.dataset.id; })[0];
+    if (act === 'x') { $('stories').style.display = 'none'; renderSel(); }
+    else if (act === 'rec') startRec();
+    else if (act === 'import') $('importFile').click();
+    else if (act === 'play') openPlayer(s);
+    else if (act === 'ren') { var t = prompt('New title', s.title); if (t) { s.title = t; dbPut(s).then(loadStories); } }
+    else if (act === 'del') { if (confirm('Delete "' + s.title + '"?')) dbDel(s.id).then(loadStories); }
+    else if (act === 'exp') exportStory(s);
+    else if (act === 'subs') transcribe(s);
+  });
+  function exportStory(s) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      var o = { format: 'skystory', version: 1, id: s.id, title: s.title, created: s.created, duration: s.duration, cues: s.cues, subs: s.subs, audio: fr.result };
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: 'application/json' }));
+      a.download = s.title.replace(/[^\w\-]+/g, '_') + '.skystory';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    };
+    fr.readAsDataURL(s.audio);
+  }
+  $('importFile').addEventListener('change', function () {
+    var f = this.files[0]; this.value = ''; if (!f) return;
+    f.text().then(function (txt) {
+      var o = JSON.parse(txt);
+      if (o.format !== 'skystory') throw new Error('not a .skystory file');
+      return fetch(o.audio).then(function (r) { return r.blob(); }).then(function (blob) {
+        return dbPut({ id: o.id || 's' + Date.now(), title: o.title, created: o.created || Date.now(), duration: o.duration,
+          audio: blob, cues: o.cues || [], subs: o.subs || [] });
+      });
+    }).then(loadStories).then(function () { storyMsg('Imported.'); }, function (e) { storyMsg('Import failed: ' + e.message); });
+  });
+
+  // Whisper runs in the browser (transformers.js); the model (~150 MB) is cached after the first download
+  var asr = null;
+  function transcribe(s) {
+    storyMsg('Loading Whisper …');
+    var load = asr || (asr = import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1').then(function (T) {
+      return T.pipeline('automatic-speech-recognition', 'onnx-community/whisper-base', {
+        progress_callback: function (p) { if (p.status === 'progress' && /onnx/.test(p.file || '')) storyMsg('Downloading Whisper model … ' + Math.round(p.progress) + ' %'); }
+      });
+    }));
+    load.catch(function () { asr = null; });
+    Promise.all([load, s.audio.arrayBuffer()]).then(function (r) {
+      storyMsg('Transcribing “' + s.title + '” …');
+      var ac = new AudioContext({ sampleRate: 16000 });
+      return ac.decodeAudioData(r[1]).then(function (ab) {
+        ac.close();
+        var opts = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
+        if (st.lang.de && !st.lang.en) opts.language = 'german';
+        return r[0](ab.getChannelData(0), opts);
+      });
+    }).then(function (out) {
+      s.subs = (out.chunks || []).map(function (c) {
+        return { t0: c.timestamp[0], t1: c.timestamp[1] == null ? s.duration : c.timestamp[1], text: c.text.trim() };
+      }).filter(function (x) { return x.text && !/^\[[^\]]*\]$/.test(x.text); });   // drop [BLANK_AUDIO] etc.
+      return dbPut(s);
+    }).then(function () {
+      return loadStories();
+    }).then(function () {
+      storyMsg('Subtitles ready (' + s.subs.length + ' lines). Fix mistakes with ✎ in the player.');
+      if (player.story && player.story.id === s.id) { player.story.subs = s.subs; renderPlayer(); }
+    }).catch(function (e) { storyMsg('Whisper failed: ' + (e && e.message || e)); });
+  }
+
   // ---------- UI wiring ----------
   function setSeg(id, v) { [].forEach.call($(id).children, function (b) { b.classList.toggle('on', b.dataset.v === v); }); }
   function setMode(m) {
+    if (m !== 'explore') { closePlayer(); if (rec) stopRec(); }
     st.mode = m; st.target = null; st.answered = false; st.streak = 0; st.score = 0;
     $('sq').dataset.mode = m; setSeg('modes', m);
     $('tip').style.display = 'none';
@@ -725,6 +1084,7 @@
   function local(e) { var r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
   cv.addEventListener('pointerdown', function (e) {
     try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    if (player.story) pausePlayer();
     ptrs[e.pointerId] = local(e);
     var ids = Object.keys(ptrs);
     if (ids.length === 1) { down = ptrs[e.pointerId]; moved = false; }
@@ -756,8 +1116,9 @@
       if (c) answer(c);
     } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'explore') {
       var s2 = unproj(p[0], p[1]), c2 = s2 && hit(s2[0], s2[1]);
-      if (c2) toggleSel(c2.abbr);
-    }
+      if (c2 && player.story) { if (player.edit) editToggle(c2.abbr); }
+      else if (c2) toggleSel(c2.abbr);
+    } else if (p && moved && rec) snap();
   }
   cv.addEventListener('pointerup', up);
   cv.addEventListener('pointercancel', up);
@@ -765,7 +1126,10 @@
   cv.addEventListener('wheel', function (e) {
     e.preventDefault(); cancelAnimationFrame(anim);
     st.S *= Math.exp(-e.deltaY * 0.0015); clampS(); req();
+    if (player.story) pausePlayer();
+    if (rec) { clearTimeout(wheelT); wheelT = setTimeout(snap, 250); }
   }, { passive: false });
+  var wheelT = 0;
 
   function hover(p) {
     var s = unproj(p[0], p[1]), tip = $('tip');
@@ -795,6 +1159,7 @@
     if (cfg.level != null && cfg.level !== '') st.level = Math.max(0, Math.min(3, +cfg.level || 0));
     if (st.level === 0 && !st.sel.length) st.level = 1;
     if (cfg.lang) { var ls = String(cfg.lang).split(/[ ,]+/); st.lang = { en: ls.indexOf('en') >= 0, de: ls.indexOf('de') >= 0 }; if (!st.lang.de) st.lang.en = true; }
+    if (!document.body.classList.contains('standalone') || !window.indexedDB) $('storiesBtn').style.display = 'none';
     renderLang();
     $('level').value = String(st.level);
     setProj(cfg.projection === 'sphere' ? 'sphere' : 'map');
