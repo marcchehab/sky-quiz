@@ -218,7 +218,7 @@
     layers: { real: true, lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
     target: null, picked: null, answered: false, hinted: false, opts: null,
     drawn: [], drawFrom: -1, result: null, drawSet: null,   // drawSet: { title, list, i, res } after a story   // draw mode: user segments [starA, starB], chain start, check result
-    score: 0, streak: 0, lang: { en: true, de: false }, sel: []   // sel: constellation abbrs in the order they were picked
+    score: 0, streak: 0, lang: { en: true, de: false }, sel: [], stars: []   // stars: HIP numbers marked while recording; sel: constellation abbrs in the order they were picked
   };
   var stats = { best: { name: 0, find: 0, draw: 0 }, c: {} };   // c[abbr] = [right, wrong, run]
   var W = 0, H = 0, dpr = 1, cx = 0, cy = 0;
@@ -464,6 +464,30 @@
     }
     return best;
   }
+  // stars marked in stories: HIP number (stable across data builds) <-> index into SKY.s
+  var HIPIX = null;
+  function starHip(n) { return +(SKY.sd[n] || '').split('|')[5] || 0; }
+  function starIx(hip) {
+    if (!HIPIX) { HIPIX = {}; SKY.sd.forEach(function (d, n) { var h = +d.split('|')[5]; if (h) HIPIX[h] = n; }); }
+    var n = HIPIX[hip]; return n == null ? -1 : n;
+  }
+  function starName(n) {
+    var f = (SKY.sd[n] || '').split('|'), c = CONS[f[4]];
+    return (st.lang.de && f[1]) || f[0] || (c && (f[2] || f[3]) ? (f[2] || f[3]) + ' ' + c.gen : 'HIP ' + f[5]);
+  }
+  // a click marks a star only right on a reasonably bright one, so constellation clicks keep working
+  function markableStar(X, Y) { var n = starAt(X, Y); return n >= 0 && SKY.s[n * 4 + 2] <= 4.5 && starHip(n) ? n : -1; }
+  function drawMarkedStars(hips) {
+    hips.forEach(function (h) {
+      var n = starIx(h); if (n < 0) return;
+      var p = proj(SKY.s[n * 4], SKY.s[n * 4 + 1]); if (!p) return;
+      ctx.beginPath(); ctx.arc(p[0], p[1], 9, 0, 2 * Math.PI);
+      ctx.strokeStyle = COL.targetEdge; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(p[0], p[1], 14, 0, 2 * Math.PI);
+      ctx.strokeStyle = 'rgba(242,201,76,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+      label(starName(n), p[0] + 17, p[1], 'bold 13px "DejaVu Sans", Verdana, sans-serif', COL.targetEdge, 'left');
+    });
+  }
   function starInfoHTML(n) {
     var f = (SKY.sd[n] || '').split('|'), i = n * 4, s = SKY.s, c = CONS[f[4]];
     var proper = st.lang.de && f[1] ? (st.lang.en ? f[0] + ' · ' + f[1] : f[1]) : f[0];
@@ -550,6 +574,8 @@
       ctx.strokeStyle = COL.lineHi; ctx.lineWidth = 2; ctx.stroke();
     }
     if (player.story && player.story.art) drawArt();
+    var mk = player.story ? player.stars : (rec ? st.stars : null);
+    if (mk && mk.length) drawMarkedStars(mk);
     if (st.target && st.mode === 'name') {
       ctx.beginPath(); st.target.lines.forEach(strokeFlat);
       ctx.strokeStyle = COL.lineHi; ctx.lineWidth = 2; ctx.stroke();
@@ -929,6 +955,11 @@
     if (rec) snap(); else save();
     renderSel(); req();
   }
+  function toggleStar(h) {   // recording only
+    var i = st.stars.indexOf(h);
+    if (i >= 0) st.stars.splice(i, 1); else st.stars.push(h);
+    snap(); req();
+  }
   function renderSel() {
     var el = $('sel'), n = st.sel.length;
     $('level').options[0].textContent = 'My list (' + n + ')';
@@ -948,7 +979,7 @@
   // story = { id, title, created, duration, audio: Blob, cues: [{ t, sel: [abbr], view }], subs: [{ t0, t1, text }] }
   // Cues are full snapshots, so the state at time t is simply the last cue with cue.t <= t.
   var DB = null, stories = [], rec = null;
-  var player = { story: null, audio: null, url: null, active: [], cue: -1, raf: 0, edit: false, gen: null, place: null };
+  var player = { story: null, audio: null, url: null, active: [], stars: [], cue: -1, raf: 0, edit: false, gen: null, place: null };
   function db() {
     return DB || (DB = new Promise(function (res, rej) {
       var r = indexedDB.open('sky-stories', 1);
@@ -980,7 +1011,8 @@
     if (!rec || !rec.t0) return;
     var t = +((performance.now() - rec.t0) / 1000).toFixed(2), last = rec.cues[rec.cues.length - 1];
     var c = { t: t, sel: st.sel.slice(), view: viewNow() };
-    if (last && t - last.t < 0.3 && last.sel.join() === c.sel.join()) { last.view = c.view; return; }
+    if (st.stars.length) c.stars = st.stars.slice();
+    if (last && t - last.t < 0.3 && last.sel.join() === c.sel.join() && (last.stars || []).join() === st.stars.join()) { last.view = c.view; return; }
     rec.cues.push(c);
   }
   // the mic stream is kept open between takes, so a retake doesn't ask for permission again
@@ -1005,7 +1037,7 @@
     renderStories();
     var n = 3, r = rec;
     r.mr.ondataavailable = function (e) { if (e.data.size) r.chunks.push(e.data); };
-    st.sel = []; renderSel(); req();
+    st.sel = []; st.stars = []; renderSel(); req();
     renderRec(n);
     r.cd = setInterval(function () {
       if (rec !== r) return clearInterval(r.cd);
@@ -1026,7 +1058,7 @@
     var r = rec; if (!r) return null;
     rec = null; clearInterval(r.cd); clearInterval(r.iv);
     $('recbar').style.display = 'none';
-    st.sel = r.keepSel; renderSel(); renderStories(); req();
+    st.sel = r.keepSel; st.stars = []; renderSel(); renderStories(); req();
     return r;
   }
   function restartRec() {
@@ -1102,6 +1134,7 @@
     player.cue = i;
     var c = player.story.cues[i];
     player.active = c ? c.sel.slice() : [];
+    player.stars = c && c.stars ? c.stars.slice() : [];
     if (c && c.view) applyView(c.view);
     req(); markCue();
   }
@@ -1167,10 +1200,11 @@
     var s = player.story, el = $('pEdit');
     el.style.display = player.edit ? 'block' : 'none';
     if (!player.edit) return;
-    el.innerHTML = '<div class="hint" style="margin:0 0 4px">Click constellations on the map to switch them on/off at the playhead.</div>' +
+    el.innerHTML = '<div class="hint" style="margin:0 0 4px">Click constellations (or right on a bright star) on the map to switch them on/off at the playhead.</div>' +
       s.cues.map(function (c, i) {
         return '<div class="cue" data-i="' + i + '"><span>' + c.t.toFixed(1) + ' s</span><i>' +
-          (c.sel.length ? c.sel.map(function (a) { return esc(cname3(a)); }).join(', ') : '—') + '</i>' +
+          (c.sel.length ? c.sel.map(function (a) { return esc(cname3(a)); }).join(', ') : '—') +
+          (c.stars && c.stars.length ? ' · ★ ' + c.stars.map(function (h) { var n = starIx(h); return esc(n < 0 ? 'HIP ' + h : starName(n)); }).join(', ') : '') + '</i>' +
           '<button data-act="nudge" data-d="-0.5">−½ s</button><button data-act="nudge" data-d="0.5">+½ s</button>' +
           '<button data-act="go">▶</button><button data-act="artfor" title="Generate a picture for these constellations">🎨</button><button data-act="delcue">×</button></div>';
       }).join('') +
@@ -1186,11 +1220,18 @@
     var s = player.story, t = +ptime().toFixed(2), i = cueAt(t), c = s.cues[i];
     if (c && Math.abs(c.t - t) < 0.25) return c;
     c = { t: t, sel: player.active.slice(), view: viewNow() };
+    if (player.stars.length) c.stars = player.stars.slice();
     s.cues.push(c); return c;
   }
   function editToggle(a) {
     var c = cueAtPlayhead(), i = c.sel.indexOf(a);
     if (i >= 0) c.sel.splice(i, 1); else c.sel.push(a);
+    saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit();
+  }
+  function editStar(h) {
+    var c = cueAtPlayhead(), a = c.stars = c.stars || [], i = a.indexOf(h);
+    if (i >= 0) a.splice(i, 1); else a.push(h);
+    if (!a.length) delete c.stars;
     saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit();
   }
   $('player').addEventListener('click', function (e) {
@@ -1205,7 +1246,7 @@
     else if (act === 'delcue') { s.cues.splice(i, 1); saveStory(); player.cue = -1; applyAt(ptime()); renderTicks(); renderEdit(); }
     else if (act === 'go') { pausePlayer(); player.audio.currentTime = s.cues[i].t; player.cue = -1; applyAt(s.cues[i].t); updTime(); }
     else if (artAct(act, b, s)) return;
-    else if (act === 'addcue') { var c = cueAtPlayhead(); c.view = viewNow(); c.sel = player.active.slice(); saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
+    else if (act === 'addcue') { var c = cueAtPlayhead(); c.view = viewNow(); c.sel = player.active.slice(); if (player.stars.length) c.stars = player.stars.slice(); else delete c.stars; saveStory(); player.cue = -1; renderTicks(); renderEdit(); }
   });
   $('player').addEventListener('focusout', function (e) {
     var i = e.target.dataset && e.target.dataset.si;
@@ -1745,6 +1786,9 @@
     } else if (p && !moved && Object.keys(ptrs).length === 0 && st.mode === 'find' && st.target && !st.answered) {
       var s = unproj(p[0], p[1]), c = s && hit(s[0], s[1]);
       if (c) answer(c);
+    } else if (p && !moved && Object.keys(ptrs).length === 0 && freeMode() && (rec || (player.story && player.edit)) && markableStar(p[0], p[1]) >= 0) {
+      var mh = starHip(markableStar(p[0], p[1]));
+      if (rec) toggleStar(mh); else editStar(mh);
     } else if (p && !moved && Object.keys(ptrs).length === 0 && freeMode() && !rec && !player.edit && starAt(p[0], p[1]) >= 0) {
       showStar(starAt(p[0], p[1]), p[0], p[1]);
     } else if (p && !moved && Object.keys(ptrs).length === 0 && freeMode()) {
