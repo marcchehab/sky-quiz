@@ -106,6 +106,21 @@
   #storybox .acts { display: block; font-size: 11px; }
   #storybox .acts b { cursor: pointer; opacity: .6; margin-right: 8px; font-weight: normal; }
   #storybox .acts b:hover { opacity: 1; color: #f2c94c; }
+  #storybox .acts b.blk { color: #f87171; opacity: 1; cursor: default; }
+  #storybox .hd button { margin-left: 4px; }
+  #acct { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+  #acct .box { position: relative; background: #0b0d33; color: #e8eaf6; border: 1px solid #8c7a2e; border-radius: 12px; padding: 16px 18px;
+    width: min(360px, calc(100% - 32px)); font: 14px "DejaVu Sans", Verdana, sans-serif; }
+  #acct h3 { margin: 0 0 10px; font-size: 16px; }
+  #acct p { margin: 8px 0; }
+  #acct input { width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 14px; background: #141852; color: #e8eaf6; border: 1px solid #3a3f8f; border-radius: 6px; }
+  #acct p:has(> input + button) { display: flex; gap: 6px; }
+  #acct button { padding: 6px 12px; margin-right: 6px; background: #1b1e5e; color: #e8eaf6; border: 1px solid #3a3f8f; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  #acct button.main { background: #f2c94c; color: #08093d; border-color: #f2c94c; font-weight: bold; }
+  #acct .alt { font-size: 12px; opacity: .85; }
+  #acct a { color: #f2c94c; }
+  #acct .x { position: absolute; right: 12px; top: 10px; cursor: pointer; opacity: .6; }
+  #acct .msg { color: #f2c94c; min-height: 1em; }
   #storybox .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #f2c94c; font-weight: bold; }
   #storybox .hd span { flex: 1; }
   #storybox ol { margin: 0; padding-left: 20px; }
@@ -999,8 +1014,9 @@
     });
   }
   function dbAll() { return dbReq('readonly', function (s) { return s.getAll(); }); }
-  function dbPut(x) { return dbReq('readwrite', function (s) { return s.put(x); }); }
-  function dbDel(id) { return dbReq('readwrite', function (s) { return s.delete(id); }); }
+  // online (skystories server) the same calls go to the account instead of IndexedDB
+  function dbPut(x) { return ONLINE ? srvPut(x) : dbReq('readwrite', function (s) { return s.put(x); }); }
+  function dbDel(id) { return ONLINE ? api('DELETE', '/api/stories/' + encodeURIComponent(id)) : dbReq('readwrite', function (s) { return s.delete(id); }); }
 
   function fmtT(t) { t = Math.max(0, t || 0); return Math.floor(t / 60) + ':' + ('0' + Math.floor(t % 60)).slice(-2); }
   // view as field of view (not px/rad) so a story plays the same on any screen size
@@ -1074,7 +1090,7 @@
     r.mr.onstop = function () {
       if (!r.t0) return;   // cancelled during the countdown
       var old = r.replace;
-      var s = { id: old ? old.id : 's' + Date.now(), title: r.title, created: old ? old.created : Date.now(), duration: dur,
+      var s = { id: old ? old.id : 's' + Date.now() + Math.random().toString(36).slice(2, 6), title: r.title, created: old ? old.created : Date.now(), duration: dur,
         audio: new Blob(r.chunks, { type: r.mr.mimeType || 'audio/webm' }), cues: r.cues, subs: [],
         art: old ? old.art || [] : [], sfx: old ? old.sfx || [] : [] };
       dbPut(s).then(loadStories).then(function () { openPlayer(s); });
@@ -1094,7 +1110,7 @@
       while (i < u.length - 3 && !(u[i] === 0x1A && u[i + 1] === 0x45 && u[i + 2] === 0xDF && u[i + 3] === 0xA3)) i++;
       if (i === 0 || i >= u.length - 3) return s;
       s.audio = s.audio.slice(i, u.length, s.audio.type);
-      return dbPut(s).then(function () { return s; });
+      return s.published ? s : dbPut(s).then(function () { return s; });
     });
   }
   function openPlayer(s) { repairAudio(s).then(openPlayer2); }
@@ -1597,12 +1613,146 @@
     return true;
   }
 
+  // --- online: skystories server (accounts; stories as JSON + content-addressed files) ---
+  var ONLINE = false, ME = null, remote = [];
+  function api(method, url, body) {
+    return fetch(url, { method: method, credentials: 'same-origin', headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || 'Server error ' + r.status);
+        return j;
+      });
+    });
+  }
+  function detectOnline() {
+    if (!/^https?:$/.test(location.protocol) || /[?&]local\b/.test(location.search)) return Promise.resolve();
+    return fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok || !/json/.test(r.headers.get('content-type') || '')) return;
+      return r.json().then(function (j) { ONLINE = true; setMe(j.user); });
+    }).catch(function () {}).then(function () {
+      if (/[?&]signedin=1/.test(location.search)) {
+        history.replaceState(null, '', location.pathname);
+        if (ME) setTimeout(function () { storyMsg('Signed in as ' + ME.email + '.'); }, 50);
+      }
+    });
+  }
+  function setMe(u) { ME = u || null; AUTHOR = !!ME; }
+  var blobHash = new WeakMap();   // Blob -> sha256 hex (uploaded or downloaded already)
+  function upBlob(b) {
+    if (blobHash.has(b)) return Promise.resolve(blobHash.get(b));
+    return b.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+      var h = Array.from(new Uint8Array(d), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+      return fetch('/api/blobs/' + h, { method: 'HEAD', credentials: 'same-origin' }).then(function (r) {
+        if (r.ok) return;
+        return fetch('/api/blobs/' + h, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': b.type || 'application/octet-stream' }, body: buf })
+          .then(function (r2) { if (!r2.ok) return r2.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || 'Upload failed (' + r2.status + ')'); }); });
+      }).then(function () { blobHash.set(b, h); return h; });
+    }); });
+  }
+  var saving = {};   // one save per story at a time, in order
+  function srvPut(s) {
+    var p = (saving[s.id] || Promise.resolve()).catch(function () {}).then(function () {
+      var art = s.art || [], sfx = s.sfx || [];
+      return Promise.all([upBlob(s.audio), Promise.all(art.map(function (a) { return upBlob(a.img); })),
+        Promise.all(sfx.map(function (x) { return upBlob(x.audio); }))]).then(function (h) {
+        return api('PUT', '/api/stories/' + encodeURIComponent(s.id), { title: s.title, created: s.created, duration: s.duration,
+          cues: s.cues, subs: s.subs || [], audio: h[0],
+          art: art.map(function (a, i) { return Object.assign({}, a, { img: h[1][i] }); }),
+          sfx: sfx.map(function (x, i) { return Object.assign({}, x, { audio: h[2][i] }); }) });
+      });
+    });
+    saving[s.id] = p;
+    p.catch(function (e) { storyMsg('Saving failed: ' + e.message); });
+    return p;
+  }
+  function getBlob(h) {
+    return fetch('/blobs/' + h).then(function (r) { if (!r.ok) throw new Error('missing file'); return r.blob(); })
+      .then(function (b) { blobHash.set(b, h); return b; });
+  }
+  function srvGet(id) {
+    return api('GET', '/api/stories/' + encodeURIComponent(id)).then(function (o) {
+      var art = o.art || [], sfx = o.sfx || [];
+      return Promise.all([getBlob(o.audio), Promise.all(art.map(function (a) { return getBlob(a.img); })),
+        Promise.all(sfx.map(function (x) { return getBlob(x.audio); }))]).then(function (r) {
+        return { id: o.id, title: o.title, created: o.created, duration: o.duration, cues: o.cues || [], subs: o.subs || [], audio: r[0],
+          art: art.map(function (a, i) { return Object.assign({}, a, { img: r[1][i] }); }),
+          sfx: sfx.map(function (x, i) { return Object.assign({}, x, { audio: r[2][i] }); }),
+          status: o.status, published: !o.mine };
+      });
+    });
+  }
+  function setStatus(s, pub) {
+    api('POST', '/api/stories/' + encodeURIComponent(s.id) + '/status', { status: pub ? 'published' : 'draft' }).then(function () {
+      storyMsg(pub ? '“' + s.title + '” is published – everyone can listen to it now.' : '“' + s.title + '” is a draft again.');
+      return loadStories();
+    }, function (e) { storyMsg(e.message); });
+  }
+
+  // account dialog: email + password, a sign-in link by mail, or a passkey
+  function loadWA() {
+    if (window.SimpleWebAuthnBrowser) return Promise.resolve(window.SimpleWebAuthnBrowser);
+    return new Promise(function (ok, no) {
+      var sc = document.createElement('script'); sc.src = '/vendor/webauthn.js';
+      sc.onload = function () { ok(window.SimpleWebAuthnBrowser); }; sc.onerror = function () { no(new Error('could not load passkey support')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function openAcct() {
+    var el = $('acct');
+    if (!el) { el = document.createElement('div'); el.id = 'acct'; document.body.appendChild(el); el.addEventListener('click', acctClick); el.addEventListener('keydown', acctKey); }
+    var pk = !!window.PublicKeyCredential;
+    el.innerHTML = '<div class="box"><b class="x" data-a="close" title="Close">✕</b><h3>📖 Sky Stories account</h3>' + (ME ?
+      '<p>Signed in as <b>' + esc(ME.email) + '</b></p>' +
+      (pk ? '<p><button data-a="addpk">Add a passkey' + (ME.passkeys ? ' (' + ME.passkeys + ' saved)' : '') + '</button></p>' : '') +
+      '<p><input id="aPw" type="password" autocomplete="new-password" placeholder="' + (ME.hasPassword ? 'New password' : 'Set a password') + ' (8+ characters)">' +
+      '<button data-a="setpw">Save</button></p>' +
+      '<p>' + (ME.isAdmin ? '<a href="/admin">Admin</a> · ' : '') + '<button data-a="logout">Sign out</button></p>'
+      :
+      '<p><input id="aEmail" type="email" autocomplete="username webauthn" placeholder="Email"></p>' +
+      '<p><input id="aPw" type="password" autocomplete="current-password" placeholder="Password"></p>' +
+      '<p><button data-a="login" class="main">Sign in</button><button data-a="register">Create account</button></p>' +
+      '<p class="alt"><button data-a="magic">Email me a sign-in link</button> (also if you forgot your password)</p>' +
+      (pk ? '<p class="alt"><button data-a="pklogin">Sign in with a passkey</button></p>' : '')) +
+      '<p class="msg" id="aMsg"></p></div>';
+    el.style.display = 'flex';
+    var f = $('aEmail') || $('aPw'); if (f) f.focus();
+  }
+  function acctMsg(m) { var e = $('aMsg'); if (e) e.textContent = m; }
+  function signedIn(j) { setMe(j.user); $('acct').style.display = 'none'; storyMsg('Signed in as ' + ME.email + '.'); loadStories(); }
+  function acctKey(e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') acctAct(ME ? 'setpw' : 'login'); if (e.key === 'Escape') $('acct').style.display = 'none'; }
+  function acctClick(e) {
+    if (e.target.id === 'acct') { e.target.style.display = 'none'; return; }
+    var a = e.target.dataset.a; if (a) acctAct(a);
+  }
+  function acctAct(a) {
+    var email = $('aEmail') ? $('aEmail').value.trim() : '', pw = $('aPw') ? $('aPw').value : '';
+    var fail = function (e) { acctMsg(e.message || String(e)); };
+    if (a === 'close') $('acct').style.display = 'none';
+    else if (a === 'login') api('POST', '/api/auth/login', { email: email, password: pw }).then(signedIn, fail);
+    else if (a === 'register') api('POST', '/api/auth/register', { email: email, password: pw })
+      .then(function () { acctMsg('Almost done: we sent a link to ' + email + '. Click it to confirm your account.'); }, fail);
+    else if (a === 'magic') api('POST', '/api/auth/magic', { email: email })
+      .then(function () { acctMsg('We sent a sign-in link to ' + email + '. It works for 30 minutes.'); }, fail);
+    else if (a === 'logout') api('POST', '/api/auth/logout').then(function () { setMe(null); closePlayer(); $('acct').style.display = 'none'; loadStories(); }, fail);
+    else if (a === 'setpw') api('POST', '/api/auth/password', { password: pw }).then(function (j) { setMe(j.user); acctMsg('Password saved.'); $('aPw').value = ''; }, fail);
+    else if (a === 'addpk') loadWA().then(function (W) {
+      return api('POST', '/api/auth/passkey/register-options').then(function (o) { return W.startRegistration({ optionsJSON: o }); })
+        .then(function (r) { return api('POST', '/api/auth/passkey/register', r); })
+        .then(function (j) { setMe(j.user); openAcct(); acctMsg('Passkey saved. Next time just choose “Sign in with a passkey”.'); });
+    }).catch(fail);
+    else if (a === 'pklogin') loadWA().then(function (W) {
+      return api('POST', '/api/auth/passkey/login-options').then(function (o) { return W.startAuthentication({ optionsJSON: o }); })
+        .then(function (r) { return api('POST', '/api/auth/passkey/login', r); }).then(signedIn);
+    }).catch(fail);
+  }
+
   // --- stories list, export/import, Whisper subtitles ---
   function storyMsg(m) { var e = $('stMsg'); if (e) e.textContent = m; else if (m) alert(m); }
   // Recording/editing tools only for the author: the local file, or ?author in the URL. Visitors just play.
   var AUTHOR = location.protocol === 'file:' || /[?&]author\b/.test(location.search);
   var published = [];   // [{ id, title, duration, file }] from ../stories/index.json (published with the site)
   function loadStories() {
+    if (ONLINE) return api('GET', '/api/stories').then(function (a) { remote = a; renderStories(); }, function (e) { storyMsg(e.message); });
     var local = dbAll().then(function (a) {
       stories = (a || []).sort(function (x, y) { return x.created - y.created; });
     }, function () { stories = []; });
@@ -1611,6 +1761,7 @@
     return Promise.all([local, pub]).then(renderStories);
   }
   function allStories() {   // published first (course order), then own local ones; a local copy wins over the published one
+    if (ONLINE) return remote.map(function (r) { return Object.assign({ remote: true }, r); });
     var ids = {}, out = [];
     stories.forEach(function (s) { ids[s.id] = 1; });
     published.forEach(function (p) { if (!ids[p.id]) out.push(p); });
@@ -1623,19 +1774,26 @@
     el.style.display = 'block';
     var keep = $('stMsg') ? $('stMsg').textContent : '', list = allStories(), sc = stats.stories || {};
     el.innerHTML = '<div class="hd"><span>📖 Sky Stories</span>' +
-      (AUTHOR ? '<button data-act="rec">● Record</button><button data-act="import">Import</button>' : '') + '</div>' +
+      (AUTHOR ? '<button data-act="rec">● Record</button><button data-act="import">Import</button>' : '') +
+      (ONLINE ? '<button data-act="acct" title="Account">' + (ME ? '👤' : 'Sign in') + '</button>' : '') + '</div>' +
       '<div class="hint" style="margin:0 0 6px">Listen to a story, then draw its constellations from memory.</div>' +
       (list.length ? list.map(function (s) {
         var x = sc[s.id];
         return '<div class="item" data-id="' + s.id + '" data-act="play" style="' + scoreBg(x) + '"><span class="pl" data-act="play">▶</span>' +
           '<span class="t" data-act="play">' + esc(s.title) + '<br><small data-act="play">' + fmtT(s.duration) + (s.subs && s.subs.length ? ' · CC' : '') + '</small>' +
-          (AUTHOR && !s.pub ? '<span class="acts"><b data-act="subs" title="Subtitles with Whisper">CC</b><b data-act="ren" title="Rename">✎</b>' +
-            '<b data-act="exp" title="Export as file (to publish: put it into stories/)">⤓</b><b data-act="del" title="Delete">🗑</b></span>' : '') +
+          (AUTHOR && !s.pub && (!s.remote || s.mine) ? '<span class="acts">' + (s.remote ? (s.blocked ? '<b class="blk" title="Blocked by an admin">⛔ blocked</b>' :
+              s.status === 'published' ? '<b data-act="unpub" title="Make it a draft again">🌐 published</b>' : '<b data-act="pub" title="Everyone can see it">🌐 publish</b>') : '') +
+            '<b data-act="subs" title="Subtitles with Whisper">CC</b><b data-act="ren" title="Rename">✎</b>' +
+            '<b data-act="exp" title="Export as file">⤓</b><b data-act="del" title="Delete">🗑</b></span>' : '') +
           '</span>' + (x != null ? '<span class="sc">' + Math.round(100 * x) + ' %</span>' : '') + '</div>';
-      }).join('') : '<div class="hint">' + (AUTHOR ? 'No stories yet. Press ● Record, then tell your story while you click the constellations.' : 'No stories published yet.') + '</div>') +
+      }).join('') : '<div class="hint">' + (AUTHOR ? 'No stories yet. Press ● Record, then tell your story while you click the constellations.' : ONLINE ? 'No stories published yet. Sign in to record your own.' : 'No stories published yet.') + '</div>') +
       '<div class="hint" id="stMsg">' + esc(keep) + '</div>';
   }
   function openAny(s) {   // published stories are fetched on demand
+    if (s.remote) {
+      storyMsg('Loading “' + s.title + '” …');
+      return srvGet(s.id).then(function (x) { storyMsg(''); openPlayer(x); }, function (e) { storyMsg('Could not load the story: ' + e.message); });
+    }
     if (!s.pub) return openPlayer(s);
     storyMsg('Loading “' + s.title + '” …');
     fetch('../stories/' + s.pub.file).then(function (r) { return r.json(); }).then(unpackStory).then(function (x) {
@@ -1647,7 +1805,13 @@
     var it = e.target.closest('.item'), s = it && allStories().filter(function (x) { return x.id === it.dataset.id; })[0];
     if (act === 'rec') startRec();
     else if (act === 'import') $('importFile').click();
+    else if (act === 'acct') openAcct();
     else if (act === 'play') openAny(s);
+    else if (act === 'pub' || act === 'unpub') setStatus(s, act === 'pub');
+    else if (s && s.remote && /^(ren|exp|subs)$/.test(act)) srvGet(s.id).then(function (x) {
+      if (act === 'ren') { var t = prompt('New title', x.title); if (t) { x.title = t; dbPut(x).then(loadStories); } }
+      else if (act === 'exp') exportStory(x); else transcribe(x);
+    }, function (e) { storyMsg(e.message); });
     else if (act === 'ren') { var t = prompt('New title', s.title); if (t) { s.title = t; dbPut(s).then(loadStories); } }
     else if (act === 'del') { if (confirm('Delete "' + s.title + '"?')) dbDel(s.id).then(loadStories); }
     else if (act === 'exp') exportStory(s);
@@ -1838,6 +2002,8 @@
   }
 
   function start(cfg) {
+    // the old GitHub Pages address moved to the Sky Stories server
+    if (location.hostname === 'marcchehab.github.io') { location.replace('https://skystories.eduskript.org/' + location.search + location.hash); return; }
     cfg = cfg || {};
     if (+cfg.height) $('sq').style.setProperty('--h', +cfg.height + 'px');
     if (cfg.level != null && cfg.level !== '') st.level = Math.max(0, Math.min(3, +cfg.level || 0));
@@ -1853,7 +2019,7 @@
     resize();
     var modes = ['explore', 'name', 'find', 'draw'].concat(storiesOK ? ['stories'] : []);
     setMode(modes.indexOf(cfg.mode) >= 0 ? cfg.mode : storiesOK ? 'stories' : 'explore');
-    if (storiesOK) loadStories();
+    if (storiesOK) detectOnline().then(loadStories);
   }
   function applyTheme(t) { document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light'); }
 
