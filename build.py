@@ -92,7 +92,7 @@ assert CDN in cdn and "window.SKY_DATA" in cdn
 (ROOT / "dist" / "plugin.html").write_text(frag)
 page = ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<title>Constellation Trainer</title></head>\n<body class=\"standalone\">\n"
+        "<title>Sky Stories</title></head>\n<body class=\"standalone\">\n"
         + frag + "\n</body></html>\n")
 (ROOT / "dist" / "index.html").write_text(page)
 print(f"cdn plugin {len(cdn)/1024:.0f} KB, stars {len(stars)//4}, names {len(names)}, data {len(js)/1024:.0f} KB, plugin {len(frag)/1024:.0f} KB")
