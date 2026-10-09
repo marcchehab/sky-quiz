@@ -233,7 +233,7 @@
   // ---------- state ----------
   var st = {
     mode: 'explore', level: 1, proj: 'map', ra0: 0, dec0: 0, S: 0,
-    layers: { real: true, lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true },
+    layers: { real: true, lines: true, bounds: true, names: true, stars: true, messier: true, grid: true, mw: true, ecl: true, gal: true, centre: false },
     target: null, picked: null, answered: false, hinted: false, opts: null,
     drawn: [], drawFrom: -1, result: null, drawSet: null,   // drawSet: { title, list, i, res } after a story   // draw mode: user segments [starA, starB], chain start, check result
     score: 0, streak: 0, lang: { en: true, de: false }, sel: [], stars: []   // stars: HIP numbers marked while recording; sel: constellation abbrs in the order they were picked
@@ -699,10 +699,14 @@
       var q = proj(0, d); if (!q) continue;
       label((d > 0 ? '+' : '−') + Math.abs(d) + '°', q[0] + 5, q[1] - 7, f, c, 'left');
     }
-    var o = proj(0, 0);
+    // the origin marker; with the "centre point" layer it travels with the view and shows the centre's RA/Dec
+    // (♈ only while it sits on RA 0h, Dec 0°)
+    var cen = st.layers.centre, o = cen ? proj(st.ra0, st.dec0) : proj(0, 0);
+    var at0 = !cen || (Math.abs(wrap180(st.ra0)) < 0.05 && Math.abs(st.dec0) < 0.05);
     if (o) {
       ctx.beginPath(); ctx.arc(o[0], o[1], 6, 0, 7); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-      label('♈ RA 0h, Dec 0°', o[0] + 10, o[1] + 14, 'bold 13px "DejaVu Sans", Verdana, sans-serif', '#fff', 'left');
+      label(at0 ? '♈ RA 0h, Dec 0°' : 'RA ' + fmtRA(st.ra0) + ', Dec ' + fmtDec(st.dec0), o[0] + 10, o[1] + 14,
+        'bold 13px "DejaVu Sans", Verdana, sans-serif', '#fff', 'left');
     }
     var e = proj(norm360(st.ra0 + 25 * (st.proj === 'map' ? 1 : 0.6)), 0);
     if (e) label('celestial equator', e[0], e[1] + 12, 'italic 12px "DejaVu Sans", Verdana, sans-serif', c);
@@ -1897,7 +1901,7 @@
 
   $('cv').addEventListener('pointerleave', function () { cv.style.cursor = ''; });
   var LAYERS = [['real', 'Realistic stars (brightness + colour)'], ['lines', 'Constellation lines'], ['bounds', 'Boundaries'], ['names', 'Names'], ['stars', 'Stars'],
-    ['messier', 'Messier objects'], ['grid', 'RA/Dec grid'], ['mw', 'Milky Way'], ['ecl', 'Ecliptic + months'], ['gal', 'Galactic equator']];
+    ['messier', 'Messier objects'], ['grid', 'RA/Dec grid'], ['mw', 'Milky Way'], ['ecl', 'Ecliptic + months'], ['gal', 'Galactic equator'], ['centre', 'Centre point with RA/Dec']];
   $('layers').innerHTML = LAYERS.map(function (l) {
     return '<label><input type="checkbox" data-l="' + l[0] + '"' + (st.layers[l[0]] ? ' checked' : '') + '> ' + l[1] + '</label>';
   }).join('');
