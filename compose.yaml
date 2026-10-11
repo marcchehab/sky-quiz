@@ -1,6 +1,6 @@
 # Runs next to Atlas on the same VPS; Atlas' Caddy proxies skystories.eduskript.org to skystories-app:3000.
 services:
-  app:
+  skystories:   # not "app": that name is Atlas' service on the shared network
     build: .
     container_name: skystories-app
     restart: unless-stopped
